@@ -2,98 +2,74 @@
 
 # bage-rate
 
-Desktop pets for macOS. A transparent, always-on-top, click-through window
-covers your screen and renders any HTML you give it. Clicks fall through to
-whatever is underneath, except on elements you mark `.clickable`.
+Lock into the app you want to work in. Wander off and bage-rate puts a baby
+on your screen to remind you, then brings you back. For macOS.
 
-## Add a pet
+## Use it
 
-1. Write a self-contained HTML file and put it in `public/pets/`.
-   Transparent background, position things with CSS, use `class="clickable"`
-   on anything that should catch the mouse. See `public/pets/blob.html`.
-2. List it in `public/pets/manifest.json`:
+1. Open the app you want to stay in and press `Cmd+Shift+L`.
+2. Switch to another app for five seconds and the reminder plays.
+3. When it finishes, bage-rate brings your work app forward again.
+4. Press `Cmd+Shift+L` again when you're done.
 
-   ```json
-   [
-     { "file": "blob.html" },
-     { "file": "cat.html", "x": 0, "y": 900, "width": 400, "height": 200 }
-   ]
-   ```
+It follows apps, so switching tabs inside the same browser won't trigger it.
+The reminder appears over fullscreen apps too, on the primary monitor.
+Games that take exclusive control of the display may cover it.
 
-   Without a box the frame covers the whole screen and the pet positions
-   itself. With one, the pet is confined to that rectangle.
-3. `bun run dev` (or `npm run dev`).
+## Make the reminder yours
 
-A pet may draw with WebGL and run WebAssembly: `public/pets/psych.html` is
-a shader plasma whose warp factor comes from `psych.wasm`. Put the `.wasm`
-next to the HTML and `fetch` it by relative path. three.js is available too:
-`import * as THREE from "./vendor/three.module.min.js"` as in
-`public/pets/orbit.html` (the file is copied from `node_modules` on install).
+Open Settings from the tray or the app menu with `Cmd+,`. You can change the
+shortcut there, too.
 
-Pets stay visible over fullscreen apps too. The exceptions are games that
-capture the display exclusively, and fullscreen apps on a second monitor:
-the overlay covers the primary one only.
+The default baby sneezes and licks the screen. If that's not your idea of
+encouragement, drop an HTML file into Settings or paste its contents. Preview
+it there before using it. You can restore the baby with one button.
 
-Bundled pets run in separate iframe documents and share the host origin for
-click detection. Treat a bundled pet as trusted code: it is part of the app's
-same-origin content. Imported lock-in animations instead run in an isolated
-sandbox. While dragging, add `clickable` to `<html>` so the cursor is not lost
-between frames; `blob.html` shows the pattern.
+Settings also has buttons that open ChatGPT or Claude with a prompt for making
+an animation. Describe what you want, then paste the HTML you get back.
 
-## Lock-in mode
+## What stays on your Mac
 
-`Cmd+Shift+L` is the default shortcut. Change it in Settings, available from
-the app menu with `Cmd+,` or from the tray. Switch away from the anchored app
-for five seconds and the original baby animation plays. Press the shortcut
-again to unlock. Settings also accepts self-contained HTML animations and
-provides a preview with playback errors. Imported animations are served by
-Rust through a custom protocol without opening a port. See
-[playback validation](docs/lockin-validation.md) for the test procedure.
+While lock-in is on, bage-rate checks the name of the foreground app about
+twice a second. It uses that name to detect when you leave and bring you back.
+Those names aren't sent over the network.
 
-## Privacy and trust
+Your shortcut and imported animation are saved locally. Imported HTML can run
+JavaScript, so only use files you trust. It runs in an isolated frame that
+blocks network requests, forms, nested frames and access to the app's origin.
+Keep all the animation's assets in the HTML file.
 
-Lock-in mode reads the name of the foreground macOS app about twice a second
-while it is enabled. The name is used locally to detect whether you have left
-the anchored app and to bring that app forward again. bage-rate does not send
-those names over the network.
+## Work on the app
 
-Only import an animation you trust. Its HTML can run JavaScript, but it is
-served from a separate custom origin with a restrictive policy: it cannot make
-network requests, submit forms, embed frames, or read the app's origin. The
-animation itself is stored in bage-rate's local application preferences.
+Run `npm install`, then `npm run dev` to start the desktop app. Lock-in code
+lives in `src/lockin/`; bundled animations live in `public/pets/`.
 
-The optional `web-server` executable is for local development and testing. It
-has no authentication or authorization and binds to `127.0.0.1` by default.
-Keep it on loopback. If you deliberately bind it to a network interface, every
-client that can reach it can access and modify its data.
+The transparent window comes from [tauri-overlay](packages/tauri-overlay/README.md).
+That's the reusable part if you want to put your own HTML or desktop pets over
+other apps. Its Rust crate lives in the
+[tauri-overlay repository](https://github.com/charleeagni/tauri-overlay).
 
-## Layout
+Run `npm run verify` to check the code. See
+[playback validation](docs/lockin-validation.md) for manual app checks.
+The database, module and build documentation is in the
+[Tauri + GraphQL template guide](docs/tauri-graphql-template.md).
 
-- `public/pets/`: your pets, plus the manifest.
-- `packages/tauri-overlay/`: the React half of the reusable overlay; the Rust crate comes from https://github.com/charleeagni/tauri-overlay
-  (iframe host, cursor hit-testing, window setup). See its README.
-- `src/pets/`: loads the manifest into the overlay.
-- `src/lockin/`: lock-in mode.
+The optional `web-server` is for local development and testing. It has no
+authentication and binds to `127.0.0.1` by default. Keep it on loopback.
+If you bind it to a network interface, anyone who can reach it can read and
+change its data.
 
-## Under the hood
+## Build a macOS release
 
-bage-rate is built on a Tauri + GraphQL template. Its docs, including `verify`,
-Modules, and the two build targets, moved to
-[`docs/tauri-graphql-template.md`](docs/tauri-graphql-template.md).
+`npm run build:app` verifies the repository, builds the app with ad-hoc signing,
+checks its signature and creates a DMG. It also checks the app's signature
+inside the mounted DMG. Finder automation permission isn't needed.
 
-## macOS releases without a Developer ID
-
-`npm run build:app` verifies the repository, builds an app with Tauri's ad-hoc
-signing identity (`-`), checks its bundle signature, and creates a standard DMG.
-It also checks the app signature inside the mounted DMG before succeeding.
-Finder automation permission is not required.
-
-Ad-hoc signing seals the app's contents but does not identify the developer or
-provide Apple notarization. Downloaded copies can still be blocked by Gatekeeper.
-Testers must explicitly approve an app they trust using the options available
-on their macOS version. See [Apple's guidance on opening apps safely](https://support.apple.com/en-us/102445).
-The build never changes Gatekeeper settings or removes download quarantine.
+These builds aren't notarized by Apple. Gatekeeper may block a downloaded
+copy, so you may need to approve it yourself. See
+[Apple's instructions](https://support.apple.com/en-us/102445).
+The build doesn't change Gatekeeper settings or remove download quarantine.
 
 ## License
 
-MIT. See [LICENSE](LICENSE). Third-party components retain their respective licenses.
+MIT. See [LICENSE](LICENSE). Third-party components keep their own licenses.
