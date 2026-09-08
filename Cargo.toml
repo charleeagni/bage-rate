@@ -31,7 +31,7 @@ serde_json = "=1.0.151"
 specta = { version = "=2.0.0-rc.25", features = ["derive"] }
 tauri = "=2.11.5"
 taurpc = "=0.8.2"
-tempfile = "=3.23.0"
+tempfile = "=3.27.0"
 tokio = { version = "=1.53.1", features = ["macros", "rt-multi-thread", "sync", "time"] }
 # Pinned to the version the async-graphql axum integration already links, so
 # the test client speaks to the server over one WebSocket implementation.
