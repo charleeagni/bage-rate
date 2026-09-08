@@ -1,0 +1,68 @@
+{
+  "name": "bage-rate",
+  "private": true,
+  "version": "0.1.3",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "modules/*/ui"
+  ],
+  "engines": {
+    "bun": ">=1.3.0",
+    "node": ">=24.0.0",
+    "npm": ">=11.0.0"
+  },
+  "scripts": {
+    "configure": "./scripts/run-js.sh scripts/configure-template.mjs",
+    "new-module": "./scripts/new-module.sh",
+    "predev": "./scripts/check-generated-drift.sh",
+    "dev": "tauri dev",
+    "predev:web": "./scripts/check-generated-drift.sh",
+    "dev:web": "./scripts/dev-web.sh",
+    "build:ui-assets": "vite build",
+    "build:web": "./scripts/build-web.sh",
+    "build:app:check": "tauri build --debug --no-bundle --ci",
+    "build:app": "./scripts/verify.sh && ./scripts/build-app.sh",
+    "export:schema": "cargo run --locked --quiet --package app-schema --bin export_schema -- schema.graphql",
+    "export:bindings": "cargo run --locked --quiet --package tauri-graphql-transport --bin export_bindings -- src/generated/taurpc.ts",
+    "generate:entities": "./scripts/regenerate-entities.sh",
+    "generate": "./scripts/generate.sh",
+    "generate:check": "./scripts/check-generated-drift.sh",
+    "codegen": "./scripts/run-js.sh node_modules/@graphql-codegen/cli/esm/bin.js --config codegen.ts",
+    "typecheck": "tsc --noEmit",
+    "test:ts": "./scripts/test-typescript.sh",
+    "test:rust": "cargo test --locked --workspace",
+    "check:bundles": "./scripts/check-target-bundles.sh",
+    "check:seal": "./scripts/run-js.sh scripts/check-module-imports.mjs && ./scripts/run-js.sh scripts/check-module-dependencies.mjs && ./scripts/run-js.sh scripts/check-escape-hatches.mjs",
+    "fmt:check": "cargo fmt --all -- --check",
+    "clippy": "cargo clippy --locked --workspace --all-targets -- -D warnings",
+    "verify": "./scripts/verify.sh",
+    "postinstall": "mkdir -p public/pets/vendor && cp node_modules/three/build/three.module.min.js node_modules/three/build/three.core.min.js public/pets/vendor/"
+  },
+  "dependencies": {
+    "@apollo/client": "4.2.10",
+    "@tauri-apps/api": "2.11.1",
+    "@tauri-apps/plugin-global-shortcut": "2.3.2",
+    "@tauri-graphql-template/apollo": "0.1.0",
+    "graphql": "16.14.2",
+    "graphql-ws": "6.2.1",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "tauri-overlay": "0.1.0",
+    "taurpc": "2.0.0",
+    "three": "^0.185.1"
+  },
+  "devDependencies": {
+    "@graphql-codegen/cli": "7.2.0",
+    "@graphql-codegen/typed-document-node": "7.1.0",
+    "@graphql-codegen/typescript-operations": "6.1.5",
+    "@tauri-apps/cli": "2.11.4",
+    "@types/node": "26.2.0",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "5.2.0",
+    "typescript": "7.0.2",
+    "vite": "7.3.6"
+  },
+  "license": "MIT"
+}

@@ -1,0 +1,25 @@
+[package]
+name = "module-host"
+version = "0.1.0"
+description = "The module-host seam: the one safe registration path from a Module into the App Schema, and the closed set of primitives a Module authors against"
+edition = "2021"
+publish = false
+
+[lib]
+name = "module_host"
+
+[dependencies]
+module-host-macros = { path = "../module-host-macros" }
+seaolim = { path = "../seaolim" }
+futures-util.workspace = true
+sea-orm.workspace = true
+sea-orm-migration.workspace = true
+seaography.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+documents-module = { path = "../../modules/documents/rust" }
+futures-util.workspace = true
+projects-module = { path = "../../modules/projects/rust" }
+serde_json.workspace = true
+tokio.workspace = true

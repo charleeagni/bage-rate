@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mochi · Back to your thing</title>
+<!--
+  Self-contained, transparent, dependency-free overlay. Plays once in 32 seconds.
+  Peek / hello / play / please / sniff / boop / paws / takeover / goodbye.
+  Preview: ?bg=1&debug=1. Space pauses, R replays, 1–9 jump to a beat.
+  ?speed=2 accelerates playback. RobotOverlay.seek(seconds) allows precise review.
+  Completion preserves the host's babyOverlay/finish message contract.
+-->
+<style>
+  :root { color-scheme: dark; --menu-clearance: 32px; --dock-clearance: 100px; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: transparent; }
+  body { font-family: ui-rounded, "SF Pro Rounded", system-ui, sans-serif; }
+  #safe { position: fixed; inset: var(--menu-clearance) 0 var(--dock-clearance); overflow: hidden; pointer-events: none; isolation: isolate; }
+  #scene { display: block; width: 100%; height: 100%; opacity: 0; }
+  #safe.ready #scene { opacity: 1; }
+  #safe.ready #fallback { display: none; }
+  #safe.done { opacity: 0; transition: opacity .55s ease; }
+  #speech, #handoff { position: absolute; left: 50%; margin: 0; opacity: 0; text-align: center; will-change: transform, opacity; }
+  #speech { top: 13%; width: max-content; max-width: calc(100% - 36px); padding: 12px 21px 14px; border: 1px solid #fff7; border-radius: 23px 23px 23px 7px; color: #273941; background: #fffdf5f5; box-shadow: 0 5px 0 #99b5b329, 0 12px 32px #15252c22; font-size: clamp(16px, 2vw, 23px); font-weight: 650; letter-spacing: -.035em; }
+  #handoff { bottom: 6%; width: min(470px, calc(100% - 32px)); padding: 21px 24px 23px; border: 1px solid #fff8; border-radius: 28px; background: #fffdf7f5; color: #253b40; box-shadow: 0 8px 40px #142d3633; }
+  #handoff span { display: block; margin-bottom: 6px; color: #608176; font-size: 10px; font-weight: 750; letter-spacing: .18em; text-transform: uppercase; }
+  #handoff strong { display: block; font-size: clamp(23px, 3.4vw, 39px); font-weight: 750; letter-spacing: -.055em; line-height: 1.08; }
+  #handoff small { display: block; margin-top: 9px; font-size: 13px; color: #697b7c; }
+  #glass { position: absolute; inset: 0; opacity: 0; background: radial-gradient(ellipse at 50% 47%, #e5fffa21, transparent 56%); }
+  .ripple { position: absolute; left: 50%; top: 45%; width: 100px; height: 100px; margin: -50px; border: 2px solid #baf6ed; border-radius: 50%; opacity: 0; box-shadow: 0 0 16px #abefdf33, inset 0 0 16px #abefdf22; }
+  .heart { position: absolute; left: 50%; top: 45%; color: #ffb5b9; font-size: 25px; opacity: 0; text-shadow: 0 2px 8px #784a4322; }
+  #fallback { position: absolute; left: 50%; top: 48%; width: 180px; height: 180px; transform: translate(-50%, -50%); }
+  .fb-head { position: absolute; width: 180px; height: 132px; border-radius: 52px; background: linear-gradient(145deg, #fffef6, #b4c8c7); box-shadow: inset -6px -9px 0 #849f9d55, 0 12px 24px #102a3026; }
+  .fb-ear { position: absolute; top: -34px; width: 43px; height: 65px; border: 8px solid #e8ece3; border-radius: 24px 24px 10px 10px; background: #c1b5d5; }
+  .fb-ear.left { left: 15px; transform: rotate(-22deg); }
+  .fb-ear.right { right: 12px; transform: rotate(28deg); }
+  .fb-face { position: absolute; inset: 19px 12px 13px; border-radius: 37px; background: linear-gradient(150deg, #263f47, #0c1c26); }
+  .fb-face::before, .fb-face::after { content: ""; position: absolute; top: 23px; width: 22px; height: 35px; border-radius: 12px; background: #baffec; box-shadow: 0 0 12px #a2ffdb66; }
+  .fb-face::before { left: 31px; } .fb-face::after { right: 31px; }
+  .fb-nose { position: absolute; left: 70px; top: 62px; width: 18px; height: 12px; border-radius: 6px 6px 10px 10px; background: #ffb5b9; }
+  #fallback p { position: absolute; top: 147px; left: -60px; width: 300px; padding: 14px; margin: 0; border-radius: 20px; background: #fffdf7; color: #253b40; font-size: 20px; text-align: center; }
+  #preview { display: none; position: fixed; inset: 0; z-index: -1; padding: 8vh 8vw; color: #718380; background: #15252a; }
+  #preview header { display: flex; justify-content: space-between; font-size: 11px; letter-spacing: .16em; text-transform: uppercase; }
+  #preview h1 { margin: 17vh 0 20px; max-width: 600px; font-size: clamp(35px, 6vw, 80px); line-height: 1.04; letter-spacing: -.06em; font-weight: 500; color: #afc0b8; }
+  #preview p { max-width: 360px; font-size: 14px; line-height: 1.8; }
+  #hud { display: none; position: fixed; left: 14px; bottom: 18px; color: #dcf7e9; font: 11px/1.7 ui-monospace, monospace; white-space: pre-line; background: #13292be8; padding: 9px 14px; border: 1px solid #7cb09c33; border-radius: 12px; pointer-events: none; }
+  @media (max-height: 550px) { :root { --menu-clearance: 16px; --dock-clearance: 38px; } #handoff { padding: 12px 18px; } #handoff small { margin-top: 5px; } }
+  @media (prefers-reduced-motion: reduce) { #safe.done { transition: none; } }
+</style>
+</head>
+<body>
+<div id="preview" aria-hidden="true"><header><span>mochi / attention companion</span><span>animation study 01</span></header><h1>You had a thing<br>you wanted to make.</h1><p>A little company for getting back to it.<br>Watch what happens when you keep ignoring him.</p></div>
+<div id="safe" role="img" aria-label="A little robot puppy waves, bows, sniffs the camera, and presses its paws against the glass to coax you back to work.">
+  <canvas id="scene" aria-hidden="true"></canvas>
+  <div id="glass" aria-hidden="true"></div>
+  <div class="ripple" aria-hidden="true"></div><div class="ripple" aria-hidden="true"></div><div class="ripple" aria-hidden="true"></div>
+  <div class="heart" aria-hidden="true">♥</div><div class="heart" aria-hidden="true">♥</div><div class="heart" aria-hidden="true">♥</div>
+  <div id="fallback" aria-hidden="true"><div class="fb-head"><i class="fb-ear left"></i><i class="fb-ear right"></i><div class="fb-face"><i class="fb-nose"></i></div></div><p>Come on. Back to your thing.</p></div>
+  <p id="speech" aria-hidden="true"></p>
+  <div id="handoff" aria-hidden="true"><span>Okay, you've got company</span><strong>Back to your thing.</strong><small>I'll come with you.</small></div>
+</div>
+<output id="hud" aria-hidden="true"></output>
+<script>
+(() => {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  const safe = $('safe'), canvas = $('scene'), speech = $('speech'), handoff = $('handoff');
+  const ripples = [...document.querySelectorAll('.ripple')], hearts = [...document.querySelectorAll('.heart')];
+  const params = new URLSearchParams(location.search), debug = params.get('debug') === '1';
+  if (params.get('bg') === '1') $('preview').style.display = 'block';
+  if (debug) $('hud').style.display = 'block';
+  const motion = matchMedia('(prefers-reduced-motion: reduce)');
+  const PI = Math.PI, clamp = (v, lo = 0, hi = 1) => Math.min(hi, Math.max(lo, v));
+  const mix = (a, b, t) => a + (b - a) * t;
+  const smooth = v => { v = clamp(v); return v * v * (3 - 2 * v); };
+  const phase = (t, a, b) => smooth((t - a) / (b - a));
+  const envelope = (t, a, b, c, d) => phase(t, a, b) * (1 - phase(t, c, d));
+  const pulse = (t, center, width) => Math.exp(-Math.pow((t - center) / width, 2));
+  const duration = 32, beats = [0, 3, 6.4, 10, 14, 18, 21.6, 25.5, 30];
+  const names = ['peek', 'hello', 'play bow', 'puppy eyes', 'sniff', 'boop', 'paws on glass', 'taking over', 'back to work'];
+  const speed = clamp(Number(params.get('speed')) || 1, .2, 5);
+  let time = 0, paused = false, previous = performance.now(), raf = 0, deadline = 0, cleanupTimer = 0;
+  let finished = false, disposed = false, primary = false, gl, program;
+  const meshes = [], u = {};
+  function finish() {
+    if (finished || disposed) return;
+    finished = true; cancelAnimationFrame(raf); clearTimeout(deadline);
+    window.parent.postMessage({ source: "babyOverlay", event: "finish" }, "*");
+    safe.classList.add('done'); cleanupTimer = setTimeout(dispose, 600);
+  }
+  function dispose() {
+    if (disposed) return;
+    disposed = true; cancelAnimationFrame(raf); clearTimeout(deadline); clearTimeout(cleanupTimer);
+    window.removeEventListener('resize', resize); window.removeEventListener('pagehide', dispose);
+    if (!debug) window.removeEventListener('keydown', keys);
+    motion.removeEventListener('change', motionChanged);
+    canvas.removeEventListener('webglcontextlost', contextLost);
+    if (gl && !gl.isContextLost()) { meshes.forEach(m => gl.deleteBuffer(m.buffer)); if (program) gl.deleteProgram(program); }
+    safe.remove();
+    if (debug) $('hud').textContent = 'Finished. R to replay.';
+    else $('hud').style.display = 'none';
+  }
+  function armDeadline() {
+    clearTimeout(deadline);
+    if (!paused && !finished) deadline = setTimeout(finish, Math.max(0, duration - time) * 1000 / speed + 800);
+  }
+  function fallback() {
+    primary = false; cancelAnimationFrame(raf); safe.classList.remove('ready'); canvas.style.display = 'none';
+    speech.style.opacity = handoff.style.opacity = $('glass').style.opacity = 0;
+    [...ripples, ...hearts].forEach(el => { el.style.opacity = 0; });
+    clearTimeout(deadline); if (!paused) deadline = setTimeout(finish, 4500);
+  }
+  function contextLost(event) { event.preventDefault(); fallback(); }
+  function motionChanged() { if (motion.matches) fallback(); }
+  window.addEventListener('pagehide', dispose); motion.addEventListener('change', motionChanged);
+  canvas.addEventListener('webglcontextlost', contextLost); armDeadline();
+
+  const I = () => new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]);
+  function mul(a, b) {
+    const out = new Float32Array(16);
+    for (let j=0;j<4;j++) for (let i=0;i<4;i++) out[j*4+i]=a[i]*b[j*4]+a[4+i]*b[j*4+1]+a[8+i]*b[j*4+2]+a[12+i]*b[j*4+3];
+    return out;
+  }
+  function matrix(x=0,y=0,z=0,rx=0,ry=0,rz=0,sx=1,sy=sx,sz=sx) {
+    const a=I(),b=I(),c=I();
+    a[5]=a[10]=Math.cos(rx);a[6]=Math.sin(rx);a[9]=-a[6];
+    b[0]=b[10]=Math.cos(ry);b[8]=Math.sin(ry);b[2]=-b[8];
+    c[0]=c[5]=Math.cos(rz);c[1]=Math.sin(rz);c[4]=-c[1];
+    const out=mul(c,mul(b,a));
+    for(let j=0;j<3;j++)for(let i=0;i<3;i++)out[j*4+i]*=[sx,sy,sz][j];
+    out[12]=x;out[13]=y;out[14]=z;return out;
+  }
+  const norm=v=>{const l=Math.hypot(...v)||1;return v.map(x=>x/l);};
+  const cross=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
+  function normal(m) {
+    const a=[m[0],m[1],m[2]],b=[m[4],m[5],m[6]],c=[m[8],m[9],m[10]];
+    const x=cross(b,c),y=cross(c,a),z=cross(a,b),d=a[0]*x[0]+a[1]*x[1]+a[2]*x[2];
+    return new Float32Array([...x,...y,...z].map(v=>v/d));
+  }
+  function mesh(vertices) {
+    const buffer=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buffer);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(vertices),gl.STATIC_DRAW);
+    const result={buffer,count:vertices.length/6};meshes.push(result);return result;
+  }
+  function grid(n,m,fn) {
+    const v=[];
+    for(let i=0;i<n;i++)for(let j=0;j<m;j++){
+      const a=fn(i/n,j/m),b=fn((i+1)/n,j/m),c=fn((i+1)/n,(j+1)/m),d=fn(i/n,(j+1)/m);v.push(...a,...b,...c,...a,...c,...d);
+    }return v;
+  }
+  function rounded() {
+    const out=[],coords=[-.5,-.485,-.455,-.40,-.30,0,.30,.40,.455,.485,.5];
+    for(let axis=0;axis<3;axis++)for(const sign of [-1,1])out.push(...grid(10,10,(u,v)=>{
+      const p=[0,0,0];p[axis]=sign*.5;p[(axis+1)%3]=coords[Math.round(u*10)];p[(axis+2)%3]=coords[Math.round(v*10)];
+      const q=p.map(x=>clamp(x,-.29,.29)),n=norm(p.map((x,i)=>x-q[i]));return [...q.map((x,i)=>x+.21*n[i]),...n];
+    }));return mesh(out);
+  }
+  let W=1,H=1,S=90,projection=I(),box,sphere,tube;
+  const contacts=[];
+  function screenPoint(m,p) {
+    const x=m[0]*p[0]+m[4]*p[1]+m[8]*p[2]+m[12];
+    const y=m[1]*p[0]+m[5]*p[1]+m[9]*p[2]+m[13];
+    const z=m[2]*p[0]+m[6]*p[1]+m[10]*p[2]+m[14];
+    return [W/2+x*1000/(1000-z),H/2-y*1000/(1000-z)];
+  }
+  const cream=[.88,.90,.80],white=[.99,.98,.9],joint=[.20,.31,.32];
+  const glass=[.018,.052,.068],mint=[.55,1,.80],pink=[1,.48,.56],lilac=[.59,.51,.76],trim=[.42,.61,.57];
+  function resize() {
+    if(!gl||finished||disposed)return;
+    W=Math.max(1,safe.clientWidth);H=Math.max(1,safe.clientHeight);S=Math.min(110,H/5.1,W/5.2);
+    const d=Math.min(devicePixelRatio||1,1.75);canvas.width=Math.round(W*d);canvas.height=Math.round(H*d);
+    gl.viewport(0,0,canvas.width,canvas.height);
+    projection=new Float32Array([2000/W,0,0,0,0,2000/H,0,0,0,0,-1.0001,-1,0,0,-2.0001,0]);
+    if(paused&&primary)render(time);
+  }
+  function draw(shape,m,c=cream,emission=0,alpha=1,roughness=.45) {
+    gl.bindBuffer(gl.ARRAY_BUFFER,shape.buffer);gl.vertexAttribPointer(0,3,gl.FLOAT,false,24,0);gl.vertexAttribPointer(1,3,gl.FLOAT,false,24,12);
+    gl.uniformMatrix4fv(u.model,false,m);gl.uniformMatrix3fv(u.normal,false,normal(m));
+    gl.uniform4f(u.color,c[0],c[1],c[2],alpha);gl.uniform1f(u.emission,emission);gl.uniform1f(u.roughness,roughness);
+    gl.depthMask(alpha>.98);gl.drawArrays(gl.TRIANGLES,0,shape.count);
+  }
+  function part(shape,parent,x,y,z,sx,sy,sz,c=cream,rx=0,ry=0,rz=0,e=0,a=1,rough=.45) {
+    draw(shape,mul(parent,matrix(x,y,z,rx,ry,rz,sx,sy,sz)),c,e,a,rough);
+  }
+  function link(parent,a,b,width,c=cream,emission=0,shape=sphere) {
+    const y=norm(b.map((v,i)=>v-a[i])),x=norm(cross(Math.abs(y[2])<.9?[0,0,1]:[1,0,0],y)),z=cross(x,y);
+    const len=Math.hypot(...b.map((v,i)=>v-a[i])),m=I();
+    for(let i=0;i<3;i++){m[i]=x[i]*width;m[i+4]=y[i]*len;m[i+8]=z[i]*width;m[i+12]=(a[i]+b[i])/2;}
+    draw(shape,mul(parent,m),c,emission);
+  }
+  function curve(parent,points,width,c,e=0) {
+    for(let i=0;i<points.length-1;i++)link(parent,points[i],points[i+1],width,c,e,tube);
+    points.forEach(p=>part(sphere,parent,...p,width,width,width,c,0,0,0,e));
+  }
+
+  // Held poses let each gesture read before the next approach. Positions are
+  // screen-relative; moving forward changes nose and paw perspective as well.
+  const staging=[
+    [0,.57,-.32,.72,-.13,-.48],[1.35,.40,-.29,.76,-.22,-.25],
+    [2.2,.40,-.29,.76,-.22,-.25],[3.2,.30,-.15,.93,.08,.12],
+    [5.7,.27,-.14,.93,-.08,-.1],[7,.12,-.08,1.02,.05,.24],
+    [9.4,.08,-.08,1.02,.02,0],[11.3,0,.02,1.28,-.09,0],
+    [13.3,0,.02,1.28,.1,-.1],[16.5,-.07,.03,2.16,-.08,.13],
+    [17.8,.04,.015,2.65,.06,-.09],[18.65,0,.015,4.2,0,0],
+    [19.15,0,.015,3.35,-.035,0],[20.8,0,.015,3.4,.045,0],
+    [22.8,0,.05,3.9,-.02,0],[24.8,0,.05,3.9,.02,0],
+    [26.5,0,.08,4.9,-.025,0],[29.7,0,.08,4.9,.025,0],
+    [30.8,0,.06,3.2,-.08,0],[32,0,-1.1,1.5,.18,.15]
+  ];
+  function stage(t) {
+    let a=staging[0],b=a;
+    for(let i=1;i<staging.length;i++){b=staging[i];if(t<=b[0])break;a=b;}
+    const q=smooth((t-a[0])/Math.max(.001,b[0]-a[0]));return a.slice(1).map((v,i)=>mix(v,b[i+1],q));
+  }
+  function acting(t) {
+    const bow=envelope(t,6.7,7.45,8.25,9.15),beg=envelope(t,10,10.8,12.7,13.6);
+    const sniff=envelope(t,14,15,17.7,18.2),boop=pulse(t,18.65,.18);
+    const paws=phase(t,21.1,22.5)*(1-phase(t,30,31.4)),takeover=phase(t,25,26.6)*(1-phase(t,30,31));
+    const wave=envelope(t,3.1,3.65,5.3,5.95),wag=1+wave*1.8+bow*3+paws*1.2;
+    const hop=pulse(t,6.35,.23)*.22+pulse(t,9.65,.25)*.17;
+    const tilt=-.25*envelope(t,1.1,1.65,2.2,2.8)+.24*envelope(t,4.1,4.65,5.3,5.9)
+      -.28*beg+.17*envelope(t,12.7,13.3,13.8,14.4)+.11*Math.sin(t*4)*sniff;
+    const happy=envelope(t,4,4.35,5,5.5)+envelope(t,19.2,19.55,20.2,20.7);
+    return {bow,beg,sniff,boop,paws,takeover,wave,wag,hop,tilt,happy};
+  }
+  function pose(t,a) {
+    const [x,y,scale,roll,yaw]=stage(t);
+    const maximum=Math.min(W*.52,H*.88);
+    const unit=scale<=1.28?S*scale:mix(S*1.28,maximum,clamp((scale-1.28)/3.62));
+    const z=Math.min(1000-S*1.62,1000-S*.65-1000*S/unit),depth=(1000-z-S*.65)/1000;
+    const bounce=Math.sin(t*3.6)*.018+a.hop-a.bow*.18;
+    return matrix(x*W*depth,y*H*depth-S*(.86-bounce),z,a.bow*.25,yaw,roll+Math.sin(t*2.1)*.012,S,S*(1-a.bow*.08),S);
+  }
+  function paw(parent,side,hand,press) {
+    const shoulder=[side*.52,-.04,0],elbow=[side*(.75+press*.13),mix(-.36,.03,press),.2+press*.25];
+    part(sphere,parent,...shoulder,.28,.28,.28,joint);link(parent,shoulder,elbow,.27);
+    part(sphere,parent,...elbow,.22,.22,.22,trim);link(parent,elbow,hand,.25);
+    const p=mul(parent,matrix(...hand,-.12*(1-press),side*-.10,side*(.1+press*.10)));
+    part(sphere,p,0,0,0,.47+press*.07,.43,.32,cream);
+    part(sphere,p,0,-.05,.147,.22,.17,.065,lilac);
+    for(let i=0;i<3;i++)part(sphere,p,(i-1)*.122,.10+.025*(i===1),.132,.095,.11,.065,lilac);
+    part(sphere,p,-side*.21,-.03,.01,.15,.2,.19,white);
+  }
+  function eye(head,side,t,a) {
+    let blink=0;[2.65,5.9,9.1,13.8,17.4,20.6,24.6,29.5,30.35].forEach(center=>{blink=Math.max(blink,pulse(t,center,.085));});
+    const h=(.30+a.beg*.065+a.sniff*.025)*(1-.94*blink),x=side*.325+Math.sin(t*1.7)*.016*a.sniff,y=.035-a.beg*.014;
+    if(a.happy>.3) {
+      const points=Array.from({length:9},(_,i)=>{const q=i/8;return [x+(q-.5)*.22,y+.07*Math.sin(q*PI)*a.happy,.64];});
+      curve(head,points,.043,mint,1);
+    } else {
+      part(box,head,x,y,.638,.205,h,.04,mint,0,0,-side*a.beg*.10,1);
+      part(sphere,head,x-.035,y+h*.20,.665,.047,Math.max(.009,.06*(1-blink)),.012,white,0,0,0,1);
+    }
+    part(sphere,head,side*.325,.27+a.beg*.04,.658,.24,.044,.025,trim,0,0,side*a.beg*.23,.2);
+    part(sphere,head,side*.50,-.16,.658,.14,.055,.022,pink,0,0,side*-.13,.5);
+  }
+  function robot(parent,t,a) {
+    // Secondary motion trails from the base of the tail toward its tip.
+    const tail=[];
+    for(let i=0;i<9;i++){
+      const q=i/8,w=Math.sin(t*9+q*2.3)*(.13+.20*q)*a.wag*.45;
+      tail.push([.38+q*.55+w,-.43+Math.sin(q*PI*.75)*.77-a.bow*.12,-.35-q*.12]);
+    }
+    curve(parent,tail,.115,trim);part(sphere,parent,...tail[8],.19,.23,.2,mint,0,0,0,.3);
+    part(sphere,parent,0,-.25,-.02,1.12,1.13,.85,cream);part(sphere,parent,0,-.26,.372,.65,.69,.13,white);
+    part(box,parent,0,.12,.015,1,.15,.74,trim);
+    part(sphere,parent,-.047,-.12,.455,.125,.13,.035,mint,0,0,-.35,.8);
+    part(sphere,parent,.047,-.12,.455,.125,.13,.035,mint,0,0,.35,.8);
+    part(box,parent,0,-.172,.457,.10,.10,.028,mint,0,0,PI/4,.8);
+    for(const side of [-1,1]) {
+      const kick=Math.sin(t*9+side)*.085*envelope(t,5.9,6.2,6.5,7);
+      const foot=mul(parent,matrix(side*.34,-.83+kick,-.03-a.bow*.16,-a.bow*.4,side*.08,side*.09));
+      part(sphere,foot,0,0,0,.39,.52,.41,cream);part(box,foot,0,-.20,.16,.43,.25,.60,cream);
+      part(box,foot,0,-.30,.17,.37,.075,.47,joint);
+      for(let j=0;j<2;j++)part(box,foot,(j-.5)*.13,-.18,.452,.021,.095,.015,trim);
+    }
+    const head=mul(parent,matrix(0,.83-a.bow*.18,.035+a.sniff*.08+a.boop*.06,a.bow*.38-a.beg*.07+a.sniff*.03*Math.sin(t*15),-.10*a.wave,a.tilt));
+    part(box,head,0,0,0,1.74,1.16,1.08,cream);part(box,head,0,-.015,.509,1.53,.92,.17,trim);
+    part(box,head,0,-.025,.589,1.43,.82,.11,glass,0,0,0,0,1,.14);
+    part(sphere,head,-.26,.305,.655,.65,.025,.009,[.3,.47,.46],0,0,.04,.2);
+    for(const side of [-1,1]) {
+      const settle=Math.sin((t-6.35)*17)*Math.exp(-Math.max(0,t-6.35)*3)*phase(t,6.2,6.35)*.18;
+      const lag=Math.sin(t*3.6-side*.9)*.045+settle,flop=side===1?-.34+.13*Math.sin(t*3.1-.7):0;
+      const ear=mul(head,matrix(side*.62,.48,-.10,.04+a.bow*.25,side*-.13,side*(-.22-a.beg*.27-a.bow*.15)+lag+flop));
+      part(sphere,ear,0,.16,0,.46,.62,.38,cream);part(sphere,ear,0,.19,.189,.275,.36,.055,lilac);
+      part(sphere,head,side*.875,-.025,-.02,.18,.34,.38,joint);part(sphere,head,side*.953,-.025,0,.075,.20,.23,trim);
+      eye(head,side,t,a);
+    }
+    part(sphere,head,0,-.123,.678,.155+a.boop*.035,.105-a.boop*.018,.105,pink,0,0,0,.1);
+    part(sphere,head,-.024,-.101,.723,.040,.019,.012,white,0,0,0,.7);
+    contacts[0]=screenPoint(head,[0,-.123,.73]);
+    const mouth=[];
+    for(let i=0;i<13;i++){const x=(i/12-.5)*.29;mouth.push([x,-.25+.058*Math.pow(Math.abs(x)/.145,2),.651]);}
+    curve(head,mouth,.023,mint,.8);
+    const lick=envelope(t,19.25,19.42,19.7,19.9);
+    if(lick>.001)part(sphere,head,.045,-.26+lick*.06,.682,.092,.15*lick,.035,pink,0,0,-.3,.25);
+    const waveWiggle=Math.sin((t-3.6)*13)*.12*a.wave;
+    const left=[mix(-.72,-.27,a.beg),mix(-.54,-.35,a.beg)-a.bow*.10,.30+a.beg*.28];
+    const right=[mix(.72,.94,a.wave)*(1-a.beg*.62),mix(-.54,.63,a.wave)+waveWiggle-a.beg*.04,.3+a.wave*.06+a.beg*.28];
+    for(const side of [-1,1]) {
+      const hand=side<0?left:right,tap=pulse(t,22.75+(side>0?.55:0),.16)+pulse(t,24+(side>0?.35:0),.16);
+      hand[0]=mix(hand[0],side*(.76-a.takeover*.18),a.paws);hand[1]=mix(hand[1],.19+a.takeover*.30+Math.sin(t*2+side)*.018,a.paws);
+      hand[2]=mix(hand[2],.88+tap*.05,a.paws);paw(parent,side,hand,a.paws);
+      contacts[side<0?1:2]=screenPoint(parent,[hand[0],hand[1],hand[2]+.16]);
+    }
+  }
+  function overlays(t,a) {
+    const captions=[[2.9,5.8,'oh, hi.'],[9.9,13.3,'ahem. your thing?'],[15,17.6,'are you in there?'],[19,20.8,'boop.'],[22.2,24.9,'these paws mean business.']];
+    let opacity=0;
+    for(const [start,end,label] of captions)if(t>=start&&t<=end){opacity=envelope(t,start,start+.3,end-.3,end);speech.textContent=label;}
+    const near=phase(t,12.8,14.3),nose=contacts[0];
+    speech.style.left=`${mix(clamp(nose[0]-S,130,W-130),W/2,near)}px`;
+    speech.style.top=`${mix(clamp(nose[1]-S*1.65,24,H-90),H*.10,near)}px`;
+    speech.style.opacity=opacity;speech.style.transform=`translate(-50%, ${8*(1-opacity)}px) rotate(${-2*opacity}deg)`;
+    const h=envelope(t,25.6,26.1,31,31.7);handoff.style.opacity=h;handoff.style.transform=`translate(-50%, ${20*(1-h)}px) scale(${.94+.06*h})`;
+    $('glass').style.opacity=a.paws*.7;
+    [18.65,22.75,23.3].forEach((start,i)=>{
+      const q=clamp((t-start)/.85),el=ripples[i];el.style.left=`${contacts[i][0]}px`;el.style.top=`${contacts[i][1]}px`;
+      el.style.opacity=t>=start&&q<1?(1-q)*.7:0;el.style.transform=`scale(${.25+q*2.7})`;
+    });
+    hearts.forEach((el,i)=>{
+      const start=19.25+i*.18,q=clamp((t-start)/1.5);el.style.opacity=t>=start?Math.sin(q*PI)*.85:0;
+      el.style.left=`${nose[0]}px`;el.style.top=`${nose[1]}px`;
+      el.style.transform=`translate(${42+(i-1)*43+Math.sin(q*4+i)*12}px, ${-40-q*100}px) rotate(${(i-1)*18}deg) scale(${.55+q*.45})`;
+    });
+    if(debug){const beat=beats.reduce((n,b,i)=>t>=b?i:n,0);$('hud').textContent=`${t.toFixed(1)} / ${duration}s  ·  ${names[beat]}${paused?'  ·  paused':''}\n1–9 jump  ·  space pause  ·  R replay`;}
+  }
+  function render(t) {
+    gl.depthMask(true);gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);gl.uniformMatrix4fv(u.projection,false,projection);
+    const a=acting(t);robot(pose(t,a),t,a);overlays(t,a);
+    if(!safe.classList.contains('ready')){if(gl.getError()!==gl.NO_ERROR)throw Error('Could not render overlay');safe.classList.add('ready');}
+  }
+  function frame(now) {
+    if(finished||disposed||paused||!primary)return;
+    time+=Math.max(0,now-previous)/1000*speed;previous=now;if(time>=duration){finish();return;}
+    try{render(time);raf=requestAnimationFrame(frame);}catch{fallback();}
+  }
+  function pause(){if(disposed||finished)return;paused=true;cancelAnimationFrame(raf);clearTimeout(deadline);if(primary)render(time);}
+  function play(){if(disposed||finished)return;paused=false;previous=performance.now();armDeadline();cancelAnimationFrame(raf);if(primary)raf=requestAnimationFrame(frame);else fallback();}
+  function seek(seconds){if(disposed||finished)return;const next=Number(seconds);if(!Number.isFinite(next))return;time=clamp(next,0,duration-.01);previous=performance.now();armDeadline();if(primary)render(time);}
+  function replay(){if(debug&&(disposed||finished)){location.reload();return;}if(!disposed&&!finished){seek(0);play();}}
+  function keys(event){
+    if(!debug||event.metaKey||event.ctrlKey||event.altKey)return;
+    if(event.code==='Space'){event.preventDefault();paused?play():pause();}
+    if(event.key.toLowerCase()==='r')replay();if(/^[1-9]$/.test(event.key)){pause();seek(beats[Number(event.key)-1]+.6);}
+  }
+  window.RobotOverlay=Object.freeze({pause,play,seek,replay,phases:names,get time(){return time;}});
+  window.addEventListener('keydown',keys);
+  if(motion.matches){fallback();return;}
+  function shader(type,source){const s=gl.createShader(type);gl.shaderSource(s,source);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)){gl.deleteShader(s);throw Error('Overlay shader unavailable');}return s;}
+  try {
+    gl=canvas.getContext('webgl',{alpha:true,premultipliedAlpha:true,antialias:true,depth:true,powerPreference:'low-power'});if(!gl)throw Error('WebGL unavailable');
+    const vs=shader(gl.VERTEX_SHADER,`
+      attribute vec3 aPosition,aNormal;uniform mat4 uModel,uProjection;uniform mat3 uNormal;varying vec3 vNormal,vWorld;
+      void main(){vec4 p=uModel*vec4(aPosition,1.);vWorld=p.xyz;vNormal=normalize(uNormal*aNormal);p.z-=1000.;gl_Position=uProjection*p;}
+    `);
+    const fs=shader(gl.FRAGMENT_SHADER,`
+      precision mediump float;uniform vec4 uColor;uniform float uEmission,uRoughness;varying vec3 vNormal,vWorld;
+      void main(){
+        vec3 n=normalize(vNormal),v=normalize(vec3(0.,0.,1000.)-vWorld);
+        vec3 key=normalize(vec3(-.65,1.1,1.6)),fill=normalize(vec3(1.,.25,.7));
+        float diffuse=max(dot(n,key),0.),side=max(dot(n,fill),0.);
+        float spec=pow(max(dot(n,normalize(key+v)),0.),mix(100.,22.,uRoughness)),rim=pow(1.-max(dot(n,v),0.),3.);
+        vec3 light=vec3(.24,.29,.32)+vec3(.80,.76,.63)*diffuse+vec3(.16,.24,.23)*side;
+        vec3 c=uColor.rgb*light+vec3(1.,.95,.8)*spec*(.23+.15*(1.-uRoughness))+vec3(.23,.36,.34)*rim*.34;
+        c=mix(c,uColor.rgb,uEmission);c=pow(max(c,vec3(0.)),vec3(.88));gl_FragColor=vec4(c*uColor.a,uColor.a);
+      }
+    `);
+    program=gl.createProgram();gl.attachShader(program,vs);gl.attachShader(program,fs);gl.bindAttribLocation(program,0,'aPosition');gl.bindAttribLocation(program,1,'aNormal');
+    gl.linkProgram(program);gl.deleteShader(vs);gl.deleteShader(fs);if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw Error('Overlay program unavailable');
+    gl.useProgram(program);gl.enableVertexAttribArray(0);gl.enableVertexAttribArray(1);
+    for(const name of ['model','projection','normal','color','emission','roughness'])u[name]=gl.getUniformLocation(program,'u'+name[0].toUpperCase()+name.slice(1));
+    box=rounded();sphere=mesh(grid(24,16,(u,v)=>{const a=u*PI*2,b=v*PI,n=[Math.sin(b)*Math.cos(a),Math.cos(b),Math.sin(b)*Math.sin(a)];return [...n.map(x=>x*.5),...n];}));
+    tube=mesh(grid(16,1,(u,v)=>{const a=u*PI*2;return [Math.cos(a)*.5,v-.5,Math.sin(a)*.5,Math.cos(a),0,Math.sin(a)];}));
+    gl.enable(gl.DEPTH_TEST);gl.enable(gl.BLEND);gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA);
+    window.addEventListener('resize',resize);resize();primary=true;previous=performance.now();frame(previous);
+  }catch{fallback();}
+})();
+</script>
+</body>
+</html>

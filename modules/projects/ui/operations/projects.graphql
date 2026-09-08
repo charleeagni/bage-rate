@@ -1,0 +1,29 @@
+query ListProjects {
+  projects(orderBy: { name: ASC }) {
+    nodes {
+      id
+      name
+      workspaceRoot
+    }
+  }
+}
+
+mutation CreateProject($name: String!, $workspaceRoot: String!) {
+  projectsCreateOne(data: { name: $name, workspaceRoot: $workspaceRoot }) {
+    id
+    name
+    workspaceRoot
+  }
+}
+
+mutation RenameProject($id: Int!, $name: String!) {
+  projectsUpdate(data: { name: $name }, filter: { id: { eq: $id } }) {
+    id
+    name
+    workspaceRoot
+  }
+}
+
+mutation DeleteProject($id: Int!) {
+  projectsDelete(filter: { id: { eq: $id } })
+}

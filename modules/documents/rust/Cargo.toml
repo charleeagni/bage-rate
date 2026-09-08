@@ -1,0 +1,23 @@
+[package]
+name = "documents-module"
+version = "0.1.0"
+description = "The documents Module: a registry of saved documents whose write path is a compare-and-swap"
+edition = "2021"
+publish = false
+
+[lib]
+name = "documents_module"
+
+[dependencies]
+module-host = { path = "../../../crates/module-host" }
+# Hand-authored Module code names none of the crates below. They are here
+# because the generated entity directory's `register_entity_modules!`
+# expansion resolves `seaography`, `sea-orm`, and `tokio` by crate name, and
+# because the migration prelude's derives expand to `sea_orm_migration`
+# paths. scripts/check-module-dependencies.mjs holds this list to the
+# allowlist; scripts/check-module-imports.mjs proves the hand-authored half
+# never names any of them.
+sea-orm = { workspace = true }
+sea-orm-migration = { workspace = true }
+seaography = { workspace = true }
+tokio = { workspace = true }

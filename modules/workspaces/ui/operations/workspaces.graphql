@@ -1,0 +1,52 @@
+query ListRecentWorkspaces {
+  workspaces(orderBy: { lastOpenedAt: DESC }) {
+    nodes {
+      id
+      canonicalRoot
+      displayName
+      lastOpenedAt
+      createdAt
+    }
+  }
+}
+
+mutation CreateWorkspace(
+  $id: String!
+  $canonicalRoot: String!
+  $displayName: String!
+  $lastOpenedAt: String!
+  $createdAt: String!
+) {
+  workspacesCreateOne(
+    data: {
+      id: $id
+      canonicalRoot: $canonicalRoot
+      displayName: $displayName
+      lastOpenedAt: $lastOpenedAt
+      createdAt: $createdAt
+    }
+  ) {
+    id
+    canonicalRoot
+    displayName
+    lastOpenedAt
+    createdAt
+  }
+}
+
+mutation TouchWorkspace($id: String!, $lastOpenedAt: String!) {
+  workspacesUpdate(
+    data: { lastOpenedAt: $lastOpenedAt }
+    filter: { id: { eq: $id } }
+  ) {
+    id
+    canonicalRoot
+    displayName
+    lastOpenedAt
+    createdAt
+  }
+}
+
+mutation ForgetWorkspace($id: String!) {
+  workspacesDelete(filter: { id: { eq: $id } })
+}

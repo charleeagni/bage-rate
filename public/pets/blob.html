@@ -1,0 +1,70 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="color-scheme" content="light dark" />
+    <style>
+      html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
+      .blob {
+        cursor: grab; touch-action: none;
+        position: absolute; width: 120px; aspect-ratio: 1;
+        background: radial-gradient(circle at 35% 30%, #ffd6e7, #ff7eb6 70%);
+        border-radius: 50% 50% 46% 46%;
+        animation: bounce 1.2s ease-in-out infinite;
+      }
+      .eye {
+        position: absolute; top: 38%; width: 12%; aspect-ratio: 1;
+        background: #222; border-radius: 50%; animation: blink 4s infinite;
+      }
+      .eye.l { left: 30%; }
+      .eye.r { right: 30%; }
+      @keyframes bounce {
+        0%, 100% { transform: scaleY(1); }
+        50% { transform: translateY(-18%) scaleY(1.06); }
+      }
+      @keyframes blink {
+        0%, 92%, 100% { transform: scaleY(1); }
+        96% { transform: scaleY(0.1); }
+      }
+    </style>
+  </head>
+  <body>
+    <script>
+      // One document, N blobs: `blob.html?n=100` for a load test, default 1.
+      // Each blob is draggable; a press without movement recolors it.
+      // While dragging, the whole document is `.clickable` so the host keeps
+      // sending us the cursor even when it outruns the blob between frames.
+      const n = Number(new URLSearchParams(location.search).get("n")) || 1;
+      for (let i = 0; i < n; i++) {
+        const blob = document.createElement("div");
+        blob.className = "blob clickable";
+        blob.style.left = 80 + (i % 10) * 130 + "px";
+        blob.style.top = 80 + Math.floor(i / 10) * 130 + "px";
+        blob.style.animationDelay = -Math.random() * 1.2 + "s";
+        blob.innerHTML = '<div class="eye l"></div><div class="eye r"></div>';
+        document.body.append(blob);
+      }
+
+      let grab = null;
+      document.addEventListener("pointerdown", (e) => {
+        const blob = e.target.closest(".blob");
+        if (!blob) return;
+        grab = { blob, dx: e.clientX - blob.offsetLeft, dy: e.clientY - blob.offsetTop, moved: false };
+        document.documentElement.classList.add("clickable");
+        blob.setPointerCapture(e.pointerId);
+      });
+      document.addEventListener("pointermove", (e) => {
+        if (!grab) return;
+        grab.moved = true;
+        grab.blob.style.left = e.clientX - grab.dx + "px";
+        grab.blob.style.top = e.clientY - grab.dy + "px";
+      });
+      document.addEventListener("pointerup", () => {
+        if (!grab) return;
+        if (!grab.moved) grab.blob.style.filter = grab.blob.style.filter ? "" : "hue-rotate(120deg)";
+        grab = null;
+        document.documentElement.classList.remove("clickable");
+      });
+    </script>
+  </body>
+</html>

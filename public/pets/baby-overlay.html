@@ -1,0 +1,1192 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Baby Overlay</title>
+<!--
+  Baby Overlay - a self-contained, dependency-free HTML/SVG/JS animation.
+
+  Sequence (~30s at speed 1):
+    enter -> wander -> approach -> inhale -> sneeze -> sitback
+          -> lick -> notice -> turn -> wipe -> outro
+
+  Query params:
+    ?speed=1.4     playback rate, 0.2-5 (default 1)
+    ?seed=1234     splat layout seed, same seed = same splat
+    ?autoplay=0    load without starting; call BabyOverlay.play()
+    ?loop=1        restart after the outro
+    ?block=1       swallow mouse events (default: fully click-through)
+    ?bg=1          dark stand-in backdrop, for previewing in a browser
+    ?debug=1       HUD + keys: 1-9/0/- jump to a phase, r restart, space pause
+
+  JS API (window.BabyOverlay):
+    play({speed, seed, loop, from})   from = a phase name, e.g. 'sneeze'
+    stop() / pause() / resume() / setSpeed(v)
+    on('start'|'phase'|'finish', fn)
+    phases                            array of phase names in order
+
+  Events also go out to, when present:
+    window.webkit.messageHandlers.babyOverlay.postMessage({event, data})
+    window.parent.postMessage({source:'babyOverlay', event, data}, '*')
+
+  Swift side: add "babyOverlay" as a WKScriptMessageHandler on the
+  WKWebView's userContentController, and refocus the IDE when
+  body.event === 'finish'. The page paints on a transparent background,
+  so give the WKWebView an opaque=false / clear backgroundColor host.
+-->
+<style>
+  html,body{height:100%;margin:0;background:transparent;overflow:hidden;}
+  body{-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;}
+  #stage{position:fixed;inset:0;width:100%;height:100%;display:block;pointer-events:none;}
+  /* The splat lives in its own SVG, promoted to its own compositing layer:
+     WebKit runs SVG filters on the CPU and re-runs every blob's goo blur
+     whenever the layer it sits in repaints -- which, with the baby moving
+     underneath, was every frame. Isolated, the splat only repaints when the
+     splat itself changes. Stacked after #stage so it stays on top. */
+  #splatStage{position:fixed;inset:0;width:100%;height:100%;display:block;pointer-events:none;will-change:transform;}
+  #catcher{position:fixed;inset:0;display:none;}
+  body.blocking #catcher{display:block;}
+  #hud{position:fixed;left:14px;top:14px;z-index:9;display:none;pointer-events:none;
+       font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;color:#9ff5b0;
+       background:rgba(8,12,10,.72);padding:8px 11px;border-radius:8px;white-space:pre;}
+  body.debug #hud{display:block;}
+  body.debug{background:#0f1115;}
+</style>
+</head>
+<body>
+<div id="catcher"></div>
+<svg id="stage" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+  <defs>
+    <radialGradient id="gSkin" cx="38%" cy="28%" r="80%">
+      <stop offset="0" stop-color="#ffe4cb"/>
+      <stop offset="60%" stop-color="#f9cba6"/>
+      <stop offset="100%" stop-color="#e5a780"/>
+    </radialGradient>
+    <linearGradient id="gOnesie" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#93cbdb"/>
+      <stop offset="1" stop-color="#5c98af"/>
+    </linearGradient>
+    <linearGradient id="gDiaper" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#e6dfd1"/>
+    </linearGradient>
+    <radialGradient id="gSnot" cx="34%" cy="28%" r="78%">
+      <stop offset="0" stop-color="#f4fbc4"/>
+      <stop offset="52%" stop-color="#d2e26d"/>
+      <stop offset="100%" stop-color="#93b036"/>
+    </radialGradient>
+    <linearGradient id="gTongue" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f79aa9"/>
+      <stop offset="1" stop-color="#e0697f"/>
+    </linearGradient>
+    <filter id="goo" x="-45%" y="-45%" width="190%" height="220%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="9" result="b"/>
+      <feColorMatrix in="b" type="matrix"
+        values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 26 -11"/>
+    </filter>
+    <clipPath id="clipEyeL"><ellipse cx="-54" cy="-6" rx="35" ry="37"/></clipPath>
+    <clipPath id="clipEyeR"><ellipse cx="54" cy="-6" rx="35" ry="37"/></clipPath>
+  </defs>
+
+  <g id="shake">
+    <g id="bgLayer"></g>
+
+    <g id="scene">
+      <ellipse id="shadow" cx="0" cy="0" rx="210" ry="46" fill="#1a1208" opacity="0"/>
+
+      <g id="babyRoot">
+        <!-- ===== BACK VIEW (butt toward the glass) ===== -->
+        <g id="babyBack" style="display:none">
+          <g id="headB" transform="translate(0 -300) scale(.6)">
+            <ellipse cx="-140" cy="10" rx="28" ry="34" fill="#f2bd98"/>
+            <ellipse cx="140" cy="10" rx="28" ry="34" fill="#f2bd98"/>
+            <ellipse cx="0" cy="0" rx="140" ry="128" fill="url(#gSkin)"/>
+            <path d="M-140 -4 q8 -130 140 -130 q132 0 140 130 q-70 -48 -140 -48 q-70 0 -140 48 z" fill="#8a5a3b"/>
+            <path d="M-8 -134 q36 -42 60 -8 q-24 -14 -38 10" fill="none" stroke="#8a5a3b" stroke-width="15" stroke-linecap="round"/>
+          </g>
+          <path d="M-152 -232 q-92 42 -106 132" stroke="url(#gOnesie)" stroke-width="56" fill="none" stroke-linecap="round"/>
+          <path d="M152 -232 q92 42 106 132" stroke="url(#gOnesie)" stroke-width="56" fill="none" stroke-linecap="round"/>
+          <path d="M-124 44 q-112 92 -110 182" stroke="url(#gOnesie)" stroke-width="88" fill="none" stroke-linecap="round"/>
+          <path d="M124 44 q112 92 110 182" stroke="url(#gOnesie)" stroke-width="88" fill="none" stroke-linecap="round"/>
+          <g><ellipse cx="-236" cy="240" rx="66" ry="50" fill="#f6c9a8"/><ellipse cx="-236" cy="244" rx="43" ry="31" fill="#efab88"/>
+             <circle cx="-266" cy="222" r="8" fill="#efab88"/><circle cx="-246" cy="216" r="8" fill="#efab88"/><circle cx="-226" cy="216" r="7" fill="#efab88"/></g>
+          <g><ellipse cx="236" cy="240" rx="66" ry="50" fill="#f6c9a8"/><ellipse cx="236" cy="244" rx="43" ry="31" fill="#efab88"/>
+             <circle cx="266" cy="222" r="8" fill="#efab88"/><circle cx="246" cy="216" r="8" fill="#efab88"/><circle cx="226" cy="216" r="7" fill="#efab88"/></g>
+          <g id="diaper">
+            <path d="M-204 -86 Q0 -136 204 -86 Q242 62 152 146 Q0 208 -152 146 Q-242 62 -204 -86 Z" fill="url(#gDiaper)"/>
+            <ellipse cx="-98" cy="30" rx="104" ry="96" fill="#ffffff" opacity=".5"/>
+            <ellipse cx="98" cy="30" rx="104" ry="96" fill="#ffffff" opacity=".5"/>
+            <path d="M0 -22 Q-11 78 0 158" stroke="#dcd2bf" stroke-width="11" fill="none" stroke-linecap="round"/>
+            <path d="M-204 -86 Q0 -136 204 -86 L200 -32 Q0 -82 -200 -32 Z" fill="#cfe3f2"/>
+            <circle cx="-120" cy="-72" r="13" fill="#a6c9e3"/>
+            <circle cx="120" cy="-72" r="13" fill="#a6c9e3"/>
+            <circle cx="-56" cy="76" r="9" fill="#dbe9f5"/>
+            <circle cx="74" cy="104" r="7" fill="#dbe9f5"/>
+            <circle cx="16" cy="-4" r="6" fill="#dbe9f5"/>
+          </g>
+        </g>
+
+        <!-- ===== FRONT VIEW ===== -->
+        <g id="babyFront">
+          <g id="bodyF">
+            <g id="legL"><path d="M-96 250 Q-214 268 -252 330" stroke="url(#gOnesie)" stroke-width="76" fill="none" stroke-linecap="round"/>
+              <ellipse cx="-264" cy="346" rx="52" ry="40" fill="#f6c9a8"/></g>
+            <g id="legR"><path d="M96 250 Q214 268 252 330" stroke="url(#gOnesie)" stroke-width="76" fill="none" stroke-linecap="round"/>
+              <ellipse cx="264" cy="346" rx="52" ry="40" fill="#f6c9a8"/></g>
+            <ellipse cx="0" cy="198" rx="154" ry="128" fill="url(#gOnesie)"/>
+            <path d="M-150 216 q150 56 300 0 q-8 78 -150 90 q-142 -12 -150 -90 z" fill="#fdfbf6" opacity=".92"/>
+            <g id="armL"><path d="M-130 138 Q-200 226 -192 306" stroke="url(#gOnesie)" stroke-width="64" fill="none" stroke-linecap="round"/>
+              <ellipse cx="-192" cy="324" rx="50" ry="42" fill="#f6c9a8"/></g>
+            <g id="armR"><path d="M130 138 Q200 226 192 306" stroke="url(#gOnesie)" stroke-width="64" fill="none" stroke-linecap="round"/>
+              <ellipse cx="192" cy="324" rx="50" ry="42" fill="#f6c9a8"/></g>
+          </g>
+
+          <g id="headF">
+            <ellipse cx="-144" cy="14" rx="30" ry="36" fill="#f2bd98"/>
+            <ellipse cx="144" cy="14" rx="30" ry="36" fill="#f2bd98"/>
+            <ellipse cx="0" cy="0" rx="142" ry="130" fill="url(#gSkin)"/>
+            <path d="M-120 -72 q26 -68 120 -66 q94 -2 120 66 q-58 -36 -120 -36 q-62 0 -120 36 z" fill="#8a5a3b" opacity=".96"/>
+            <path d="M-4 -124 q36 -44 62 -8 q-24 -14 -40 10" fill="none" stroke="#8a5a3b" stroke-width="15" stroke-linecap="round"/>
+
+            <g id="eyeL">
+              <g clip-path="url(#clipEyeL)">
+                <ellipse cx="-54" cy="-6" rx="35" ry="37" fill="#fffdf8"/>
+                <g id="pupL"><circle cx="-52" cy="0" r="21" fill="#41291c"/><circle cx="-61" cy="-10" r="8" fill="#fff" opacity=".92"/></g>
+                <rect id="lidL" x="-96" y="-130" width="86" height="88" fill="#f4c6a2"/>
+              </g>
+              <ellipse cx="-54" cy="-6" rx="35" ry="37" fill="none" stroke="#c98f6b" stroke-width="3" opacity=".42"/>
+            </g>
+            <g id="eyeR">
+              <g clip-path="url(#clipEyeR)">
+                <ellipse cx="54" cy="-6" rx="35" ry="37" fill="#fffdf8"/>
+                <g id="pupR"><circle cx="52" cy="0" r="21" fill="#41291c"/><circle cx="43" cy="-10" r="8" fill="#fff" opacity=".92"/></g>
+                <rect id="lidR" x="10" y="-130" width="86" height="88" fill="#f4c6a2"/>
+              </g>
+              <ellipse cx="54" cy="-6" rx="35" ry="37" fill="none" stroke="#c98f6b" stroke-width="3" opacity=".42"/>
+            </g>
+
+            <g id="browL"><path d="M-92 -66 q36 -20 72 -6" stroke="#8a5a3b" stroke-width="12" fill="none" stroke-linecap="round"/></g>
+            <g id="browR"><path d="M92 -66 q-36 -20 -72 -6" stroke="#8a5a3b" stroke-width="12" fill="none" stroke-linecap="round"/></g>
+
+            <ellipse id="cheekL" cx="-100" cy="52" rx="37" ry="25" fill="#ee8686" opacity=".34"/>
+            <ellipse id="cheekR" cx="100" cy="52" rx="37" ry="25" fill="#ee8686" opacity=".34"/>
+
+            <g id="nose">
+              <path d="M-29 28 q29 26 58 0 q-4 32 -29 32 q-25 0 -29 -32 z" fill="#f0b28e"/>
+              <ellipse cx="-12" cy="54" rx="8" ry="6" fill="#b9765a"/>
+              <ellipse cx="12" cy="54" rx="8" ry="6" fill="#b9765a"/>
+            </g>
+
+            <g id="mouthG">
+              <path id="mouth" d="" fill="#65262f"/>
+              <ellipse id="innerTongue" cx="0" cy="0" rx="0" ry="0" fill="#e06d7c" opacity="0"/>
+            </g>
+          </g>
+        </g>
+      </g>
+    </g>
+
+    <g id="tongueLayer"></g>
+  </g>
+</svg>
+<svg id="splatStage" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+  <g id="snotLayer"></g>
+  <g id="fx"></g>
+</svg>
+<div id="hud"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ---------------------------------------------------------------- setup */
+  var NS = 'http://www.w3.org/2000/svg';
+  function $(id) { return document.getElementById(id); }
+  function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
+  function lerp(a, b, t) { return a + (b - a) * t; }
+  function mulberry32(a) {
+    return function () {
+      a |= 0; a = a + 0x6D2B79F5 | 0;
+      var t = Math.imul(a ^ a >>> 15, 1 | a);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  }
+  function el(tag, attrs, parent) {
+    var n = document.createElementNS(NS, tag);
+    for (var k in attrs) n.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(n);
+    return n;
+  }
+
+  var P = new URLSearchParams(location.search);
+  var OPT = {
+    speed:    clamp(parseFloat(P.get('speed')) || 1, 0.2, 5),
+    seed:     parseInt(P.get('seed'), 10) || 20260906,
+    debug:    P.get('debug') === '1',
+    loop:     P.get('loop') === '1',
+    autoplay: P.get('autoplay') !== '0',
+    bg:       P.get('bg') === '1',
+    block:    P.get('block') === '1'
+  };
+  if (OPT.debug) document.body.classList.add('debug');
+  if (OPT.block) document.body.classList.add('blocking');
+
+  var babyRoot = $('babyRoot'), babyFront = $('babyFront'), babyBack = $('babyBack');
+  var headF = $('headF'), shakeG = $('shake'), shadow = $('shadow');
+  var snotLayer = $('snotLayer'), tongueLayer = $('tongueLayer'), fx = $('fx');
+  var hud = $('hud');
+
+  if (OPT.bg) {
+    var bg = $('bgLayer');
+    el('rect', { x: -400, y: -400, width: 2400, height: 1800, fill: '#0f1115' }, bg);
+    el('rect', { x: 180, y: 130, width: 1240, height: 720, rx: 16, fill: '#1b1e25' }, bg);
+    el('path', { d: 'M756 428 L918 492 L756 556 Z', fill: '#343a45' }, bg);
+  }
+
+  /* --------------------------------------------------------------- easing */
+  var E = {
+    linear: function (t) { return t; },
+    inQuad: function (t) { return t * t; },
+    inCubic: function (t) { return t * t * t; },
+    outCubic: function (t) { return 1 - Math.pow(1 - t, 3); },
+    outQuint: function (t) { return 1 - Math.pow(1 - t, 5); },
+    inOut: function (t) { return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; },
+    outBack: function (t) { var c1 = 1.9, c3 = c1 + 1; return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2); },
+    outElastic: function (t) {
+      var c4 = (2 * Math.PI) / 3;
+      return t === 0 ? 0 : t === 1 ? 1 : Math.pow(2, -9 * t) * Math.sin((t * 10 - 0.75) * c4) + 1;
+    }
+  };
+
+  /* ---------------------------------------------------------------- clock */
+  var raf = null, last = null, paused = false, token = 0, tickers = [];
+  function addTick(fn) { tickers.push(fn); }
+  function delTick(fn) { var i = tickers.indexOf(fn); if (i >= 0) tickers.splice(i, 1); }
+
+  function frame(now) {
+    raf = requestAnimationFrame(frame);
+    if (last === null) last = now;
+    var dt = now - last; last = now;
+    if (paused) dt = 0;
+    if (dt > 64) dt = 64;
+    var list = tickers.slice();
+    for (var i = 0; i < list.length; i++) list[i](dt);
+    render();
+  }
+  function startClock() { if (!raf) { last = null; raf = requestAnimationFrame(frame); } }
+
+  function tween(dur, ease, fn) {
+    var mine = token;
+    dur = Math.max(0, dur) / OPT.speed;
+    return new Promise(function (res) {
+      if (dur === 0) { fn(1, 1); res(); return; }
+      var e = 0;
+      function step(dt) {
+        if (mine !== token) { delTick(step); res(); return; }
+        e += dt;
+        var p = clamp(e / dur, 0, 1);
+        fn(ease(p), p);
+        if (p >= 1) { delTick(step); res(); }
+      }
+      addTick(step);
+    });
+  }
+  function wait(ms) { return tween(ms, E.linear, function () {}); }
+
+  /* ---------------------------------------------------------------- state */
+  var MOUTH = {
+    smile:   { w: 56, y: 78, tc: 16,  bc: 30 },
+    tiny:    { w: 34, y: 84, tc: 8,   bc: 18 },
+    openS:   { w: 50, y: 62, tc: -8,  bc: 58 },
+    inhale:  { w: 42, y: 58, tc: -14, bc: 68 },
+    lick:    { w: 68, y: 58, tc: -10, bc: 70 },
+    sneeze:  { w: 102, y: 38, tc: -26, bc: 94 }
+  };
+  function mcopy(m) { return { w: m.w, y: m.y, tc: m.tc, bc: m.bc }; }
+  function mlerp(out, a, b, t) {
+    out.w = lerp(a.w, b.w, t); out.y = lerp(a.y, b.y, t);
+    out.tc = lerp(a.tc, b.tc, t); out.bc = lerp(a.bc, b.bc, t);
+  }
+
+  var S = {
+    x: -170, y: 760, s: 0.16, rot: -5,
+    face: 1,            // 1 = front, -1 = back (passes through 0 = edge on)
+    bob: 0, squash: 0, alpha: 1,
+    crawl: 0, crawlAmp: 0, crawlSpeed: 0,
+    lid: 0, wink: 0, brow: 0, blush: 0.34, noseFlare: 1,
+    lookX: 0, lookY: 0, headTilt: 0,
+    jitter: 0, shake: 0,
+    mouth: mcopy(MOUTH.smile),
+    _rot: 0, _bob: 0
+  };
+
+  function mouthPath(m) {
+    return 'M' + (-m.w) + ' ' + m.y +
+           ' Q0 ' + (m.y + m.tc) + ' ' + m.w + ' ' + m.y +
+           ' Q0 ' + (m.y + m.bc) + ' ' + (-m.w) + ' ' + m.y + ' Z';
+  }
+
+  var mouthEl = $('mouth'), tongueIn = $('innerTongue');
+  var lidL = $('lidL'), lidR = $('lidR'), pupL = $('pupL'), pupR = $('pupR');
+  var browL = $('browL'), browR = $('browR'), cheekL = $('cheekL'), cheekR = $('cheekR');
+  var noseG = $('nose'), armL = $('armL'), armR = $('armR'), legL = $('legL'), legR = $('legR');
+
+  function render() {
+    var c = S.crawl, a = S.crawlAmp;
+    var cb = Math.sin(c * 2) * 13 * a;
+    var cr = Math.cos(c) * 2.4 * a;
+    var jx = S.jitter ? (Math.random() - 0.5) * S.jitter : 0;
+    var jy = S.jitter ? (Math.random() - 0.5) * S.jitter : 0;
+
+    S._bob = S.bob + cb;
+    S._rot = S.rot + cr;
+
+    var fxs = Math.max(0.03, Math.abs(S.face));
+    var sx = S.s * fxs * (1 + S.squash * 0.10);
+    var sy = S.s * (1 - S.squash * 0.14);
+
+    babyRoot.setAttribute('transform',
+      'translate(' + (S.x + jx) + ' ' + (S.y + S._bob + jy) + ') rotate(' + S._rot + ') scale(' + sx + ' ' + sy + ')');
+    babyRoot.setAttribute('opacity', S.alpha);
+    babyFront.style.display = S.face >= 0 ? '' : 'none';
+    babyBack.style.display = S.face < 0 ? '' : 'none';
+
+    // ground shadow: fades out as the baby closes in on the glass
+    var so = clamp(0.26 * (1 - (S.s - 0.15) / 1.9), 0, 0.26) * S.alpha;
+    shadow.setAttribute('opacity', so);
+    if (so > 0.001) {
+      shadow.setAttribute('transform',
+        'translate(' + S.x + ' ' + (S.y + 372 * S.s) + ') scale(' + (S.s * 1.05) + ' ' + (S.s * 0.55) + ')');
+    }
+
+    // limbs
+    var sw = Math.sin(c) * a;
+    armL.setAttribute('transform', 'rotate(' + (sw * 15) + ' -130 138)');
+    armR.setAttribute('transform', 'rotate(' + (-sw * 15) + ' 130 138)');
+    legL.setAttribute('transform', 'rotate(' + (-sw * 9) + ' -96 250)');
+    legR.setAttribute('transform', 'rotate(' + (sw * 9) + ' 96 250)');
+
+    headF.setAttribute('transform', 'rotate(' + S.headTilt + ' 0 120)');
+
+    // face
+    var ld = (S.lid * 74).toFixed(2);
+    lidL.setAttribute('transform', 'translate(0 ' + ld + ')');
+    lidR.setAttribute('transform', 'translate(0 ' + (Math.max(S.lid, S.wink) * 74).toFixed(2) + ')');
+    var px = (S.lookX * 17).toFixed(2), py = (S.lookY * 13).toFixed(2);
+    pupL.setAttribute('transform', 'translate(' + px + ' ' + py + ')');
+    pupR.setAttribute('transform', 'translate(' + px + ' ' + py + ')');
+    browL.setAttribute('transform', 'translate(0 ' + (-S.brow * 15) + ') rotate(' + (-S.brow * 7) + ' -54 -70)');
+    browR.setAttribute('transform', 'translate(0 ' + (-S.brow * 15) + ') rotate(' + (S.brow * 7) + ' 54 -70)');
+    cheekL.setAttribute('opacity', S.blush);
+    cheekR.setAttribute('opacity', S.blush);
+    noseG.setAttribute('transform', 'translate(0 44) scale(' + S.noseFlare + ') translate(0 -44)');
+
+    var m = S.mouth;
+    mouthEl.setAttribute('d', mouthPath(m));
+    var to = clamp((m.bc - 32) / 40, 0, 1);
+    tongueIn.setAttribute('opacity', to * 0.95);
+    if (to > 0) {
+      tongueIn.setAttribute('cx', 0);
+      tongueIn.setAttribute('cy', (m.y + m.bc * 0.6).toFixed(1));
+      tongueIn.setAttribute('rx', (m.w * 0.58).toFixed(1));
+      tongueIn.setAttribute('ry', (m.bc * 0.19).toFixed(1));
+    }
+
+    // camera shake
+    if (S.shake > 0.01) {
+      shakeG.setAttribute('transform',
+        'translate(' + ((Math.random() - 0.5) * S.shake) + ' ' + ((Math.random() - 0.5) * S.shake) + ')');
+    } else {
+      shakeG.setAttribute('transform', 'translate(0 0)');
+    }
+
+    if (OPT.debug) {
+      hud.textContent = 'phase  ' + hudPhase +
+        '\nscale  ' + S.s.toFixed(2) +
+        '\npos    ' + Math.round(S.x) + ', ' + Math.round(S.y) +
+        '\nsnot   ' + snot.filter(function (b) { return b.alive; }).length +
+        '\nspeed  ' + OPT.speed + (paused ? '  [PAUSED]' : '') +
+        '\nkeys   1-9 jump  r restart  space pause';
+    }
+  }
+
+  // baby-local point -> stage coordinates (mirrors the transform in render)
+  function toStage(lx, ly) {
+    var fxs = Math.max(0.03, Math.abs(S.face));
+    var hr = S.headTilt * Math.PI / 180;
+    var hx = lx * Math.cos(hr) - (ly - 120) * Math.sin(hr);
+    var hy = 120 + lx * Math.sin(hr) + (ly - 120) * Math.cos(hr);
+    var px = hx * S.s * fxs * (1 + S.squash * 0.10), py = hy * S.s * (1 - S.squash * 0.14);
+    var r = S._rot * Math.PI / 180, cs = Math.cos(r), sn = Math.sin(r);
+    return [S.x + px * cs - py * sn, S.y + S._bob + px * sn + py * cs];
+  }
+
+  // crawl cycle always advances; amplitude gates whether it shows
+  addTick(function (dt) { S.crawl += dt / 1000 * S.crawlSpeed; });
+
+  /* ----------------------------------------------------------------- snot */
+  var snot = [];
+
+  function blobPath(r, n, jit, rnd) {
+    var pts = [], i;
+    for (i = 0; i < n; i++) {
+      var ang = (i / n) * Math.PI * 2;
+      var rr = r * (1 - jit / 2 + rnd() * jit);
+      pts.push([Math.cos(ang) * rr, Math.sin(ang) * rr * 0.88]);
+    }
+    var d = 'M' + (pts[0][0] + pts[n - 1][0]) / 2 + ' ' + (pts[0][1] + pts[n - 1][1]) / 2;
+    for (i = 0; i < n; i++) {
+      var p = pts[i], q = pts[(i + 1) % n];
+      d += ' Q' + p[0].toFixed(1) + ' ' + p[1].toFixed(1) + ' ' +
+           ((p[0] + q[0]) / 2).toFixed(1) + ' ' + ((p[1] + q[1]) / 2).toFixed(1);
+    }
+    return d + ' Z';
+  }
+
+  function makeBlob(x, y, r, rnd, stubborn) {
+    var g = el('g', { transform: 'translate(' + x + ' ' + y + ') scale(0)', opacity: '0.88' }, snotLayer);
+    var goo = el('g', { filter: 'url(#goo)' }, g);
+    el('path', { d: blobPath(r, 9 + Math.floor(rnd() * 4), 0.5, rnd), fill: 'url(#gSnot)' }, goo);
+
+    var b = { el: g, x: x, y: y, r: r, alive: true, stubborn: !!stubborn, drip: false };
+
+    if (r > 46 && rnd() < 0.62) {
+      var w = r * 0.42;
+      b.drip = true;
+      b.dripLen = 0;
+      b.dripMax = r * (1.4 + rnd() * 2.6);
+      b.dripSpeed = 14 + rnd() * 26;
+      b.dripEl = el('rect', { x: -w / 2, y: r * 0.22, width: w, height: 0, rx: w / 2, fill: 'url(#gSnot)' }, goo);
+      b.beadEl = el('circle', { cx: 0, cy: r * 0.22, r: w * 0.78, fill: 'url(#gSnot)' }, goo);
+    }
+
+    // unfiltered wet highlights on top
+    var gloss = el('g', {}, g);
+    el('ellipse', {
+      cx: (-r * 0.26).toFixed(1), cy: (-r * 0.3).toFixed(1),
+      rx: (r * 0.3).toFixed(1), ry: (r * 0.2).toFixed(1),
+      fill: '#ffffff', opacity: '0.5', transform: 'rotate(-24 ' + (-r * 0.26).toFixed(1) + ' ' + (-r * 0.3).toFixed(1) + ')'
+    }, gloss);
+    el('ellipse', {
+      cx: (r * 0.3).toFixed(1), cy: (r * 0.18).toFixed(1),
+      rx: (r * 0.13).toFixed(1), ry: (r * 0.08).toFixed(1),
+      fill: '#ffffff', opacity: '0.35'
+    }, gloss);
+
+    b.scale = 0;
+    b.setScale = function (v) {
+      b.scale = v;
+      g.setAttribute('transform', 'translate(' + b.x + ' ' + b.y + ') scale(' + v.toFixed(3) + ')');
+    };
+    snot.push(b);
+    return b;
+  }
+
+  addTick(function (dt) {
+    for (var i = 0; i < snot.length; i++) {
+      var b = snot[i];
+      if (!b.alive || !b.drip) continue;
+      b.dripLen = Math.min(b.dripMax, b.dripLen + dt / 1000 * b.dripSpeed);
+      // Drips grow well under a unit per frame, and every write to an element
+      // inside the goo filter makes WebKit re-run the blur for that blob on
+      // the CPU. Only touch the DOM every few units; the blur hides the steps.
+      var drawn = Math.round(b.dripLen / 6) * 6;
+      if (drawn === b.dripDrawn) continue;
+      b.dripDrawn = drawn;
+      b.dripEl.setAttribute('height', drawn.toFixed(1));
+      b.beadEl.setAttribute('cy', (b.r * 0.22 + drawn).toFixed(1));
+    }
+  });
+
+  function clearSnot() {
+    while (snotLayer.firstChild) snotLayer.removeChild(snotLayer.firstChild);
+    snot.length = 0;
+  }
+
+  // the patch the tongue can't reach, and the butt's target
+  var STUBBORN = [
+    { x: 300, y: 316, r: 92 },
+    { x: 196, y: 392, r: 44 },
+    { x: 404, y: 248, r: 38 },
+    { x: 432, y: 372, r: 26 }
+  ];
+  var CORNER = { x: 300, y: 316 };
+
+  function buildSplat() {
+    clearSnot();
+    var rnd = mulberry32(OPT.seed);
+    var cx = 800, cy = 560, specs = [], i;
+
+    specs.push({ x: cx - 46, y: cy + 16, r: 196 });
+    specs.push({ x: cx + 168, y: cy - 84, r: 146 });
+    specs.push({ x: cx - 210, y: cy - 40, r: 124 });
+
+    for (i = 0; i < 24; i++) {
+      var ang = rnd() * Math.PI * 2;
+      var dist = Math.pow(rnd(), 0.5) * 780;
+      specs.push({
+        x: cx + Math.cos(ang) * dist * 1.22,
+        y: cy + Math.sin(ang) * dist * 0.92,
+        r: 44 + rnd() * 100
+      });
+    }
+    // a few anchored near the edges so the splat reaches the corners
+    var EDGE = [[190, 210], [1400, 190], [180, 800], [1420, 820], [800, 140], [800, 900], [140, 500], [1470, 520]];
+    for (i = 0; i < EDGE.length; i++) {
+      if (EDGE[i][0] < 520 && EDGE[i][1] < 470) continue;
+      specs.push({ x: EDGE[i][0] + (rnd() - 0.5) * 120, y: EDGE[i][1] + (rnd() - 0.5) * 110, r: 52 + rnd() * 74 });
+    }
+    for (i = 0; i < 26; i++) {
+      var a2 = rnd() * Math.PI * 2, d2 = 180 + rnd() * 780;
+      specs.push({
+        x: cx + Math.cos(a2) * d2 * 1.24,
+        y: cy + Math.sin(a2) * d2 * 0.94,
+        r: 10 + rnd() * 26
+      });
+    }
+
+    var made = [];
+    for (i = 0; i < specs.length; i++) {
+      var sp = specs[i];
+      sp.x = clamp(sp.x, 70, 1530);
+      sp.y = clamp(sp.y, 70, 930);
+      // keep the fresh splat clear of the corner reserved for the leftover
+      if (sp.x < 520 && sp.y < 470) { sp.x += 340; sp.y += 120; }
+      made.push(makeBlob(sp.x, sp.y, sp.r, rnd, false));
+    }
+    for (i = 0; i < STUBBORN.length; i++) {
+      made.push(makeBlob(STUBBORN[i].x, STUBBORN[i].y, STUBBORN[i].r, rnd, true));
+    }
+    return made;
+  }
+
+  function popSplat(blobs, instant) {
+    if (instant) {
+      blobs.forEach(function (b) { b.setScale(1); if (b.drip) { b.dripLen = b.dripMax; } });
+      return Promise.resolve();
+    }
+    var rnd = mulberry32(OPT.seed ^ 0x9e37);
+    return Promise.all(blobs.map(function (b) {
+      var delay = rnd() * (b.r > 90 ? 90 : 240);
+      return wait(delay).then(function () {
+        return tween(300, E.outBack, function (p) { b.setScale(p); });
+      });
+    }));
+  }
+
+  function killBlob(b, dur, smear) {
+    if (!b.alive) return Promise.resolve();
+    b.alive = false;
+    var s0 = b.scale;
+    return tween(dur || 260, E.outCubic, function (p) {
+      var sc = s0 * (1 - p * 0.9);
+      b.el.setAttribute('opacity', (0.88 * (1 - p)).toFixed(3));
+      b.el.setAttribute('transform',
+        'translate(' + (b.x + (smear ? smear * p : 0)) + ' ' + b.y + ') scale(' +
+        (sc * (smear ? 1 + p * 1.6 : 1)).toFixed(3) + ' ' + sc.toFixed(3) + ')');
+      if (p >= 1 && b.el.parentNode) b.el.parentNode.removeChild(b.el);
+    });
+  }
+
+  function wipeNear(px, py, radius) {
+    for (var i = 0; i < snot.length; i++) {
+      var b = snot[i];
+      if (!b.alive || b.stubborn) continue;
+      var dx = b.x - px, dy = b.y - py;
+      if (dx * dx + dy * dy < (radius + b.r * 0.6) * (radius + b.r * 0.6)) {
+        killBlob(b, 220 + b.r);
+      }
+    }
+  }
+
+  /* --------------------------------------------------------------- tongue */
+  var tongueBody = null, tongueGroove = null, tongueGloss = null;
+
+  function tongueOn() {
+    tongueOff();
+    tongueBody = el('path', { fill: 'url(#gTongue)', d: '' }, tongueLayer);
+    tongueGroove = el('path', { fill: 'none', stroke: '#c9526a', 'stroke-width': 9, 'stroke-linecap': 'round', opacity: '0.55', d: '' }, tongueLayer);
+    tongueGloss = el('path', { fill: '#ffffff', opacity: '0.22', d: '' }, tongueLayer);
+  }
+  function tongueOff() {
+    while (tongueLayer.firstChild) tongueLayer.removeChild(tongueLayer.firstChild);
+    tongueBody = tongueGroove = tongueGloss = null;
+  }
+
+  function ribbon(p0, p1, wb, wt, bulge) {
+    var dx = p1[0] - p0[0], dy = p1[1] - p0[1];
+    var L = Math.hypot(dx, dy) || 1;
+    var ux = dx / L, uy = dy / L, nx = -uy, ny = ux;
+    var mx = (p0[0] + p1[0]) / 2 + nx * bulge, my = (p0[1] + p1[1]) / 2 + ny * bulge;
+    var b1 = [p0[0] + nx * wb / 2, p0[1] + ny * wb / 2];
+    var b2 = [p0[0] - nx * wb / 2, p0[1] - ny * wb / 2];
+    var t1 = [p1[0] + nx * wt / 2, p1[1] + ny * wt / 2];
+    var t2 = [p1[0] - nx * wt / 2, p1[1] - ny * wt / 2];
+    var c1 = [mx + nx * wb * 0.22, my + ny * wb * 0.22];
+    var c2 = [mx - nx * wb * 0.22, my - ny * wb * 0.22];
+    var tipC = [p1[0] + ux * wt * 0.95, p1[1] + uy * wt * 0.95];
+    return {
+      body: 'M' + b1 + ' Q' + c1 + ' ' + t1 + ' Q' + tipC + ' ' + t2 + ' Q' + c2 + ' ' + b2 + ' Z',
+      spine: 'M' + [p0[0], p0[1]] + ' Q' + [mx, my] + ' ' + [p1[0], p1[1]],
+      gloss: 'M' + b1 + ' Q' + c1 + ' ' + t1 + ' Q' + [mx + nx * wb * 0.02, my + ny * wb * 0.02] + ' ' + b1 + ' Z'
+    };
+  }
+
+  function drawTongue(tip, extend) {
+    if (!tongueBody) return;
+    var base = toStage(0, S.mouth.y + S.mouth.bc * 0.55);
+    var dx = tip[0] - base[0], dy = tip[1] - base[1];
+    var p1 = [base[0] + dx * extend, base[1] + dy * extend];
+    var L = Math.hypot(dx, dy) * extend;
+    var bulge = Math.min(90, L * 0.1);
+    var r = ribbon(base, p1, Math.max(70, S.mouth.w * S.s * 0.9), 78, bulge);
+    tongueBody.setAttribute('d', r.body);
+    tongueGroove.setAttribute('d', r.spine);
+    tongueGloss.setAttribute('d', r.gloss);
+    return p1;
+  }
+
+  /* ------------------------------------------------------------------ fx */
+  // A brief reflection marks the tongue's contact with freshly cleaned glass.
+  function cleanGlint(x, y) {
+    var g = el('g', { transform: 'translate(' + x + ' ' + y + ')', opacity: 0 }, fx);
+    el('path', { d: 'M0 -22 Q3 -3 16 0 Q3 3 0 22 Q-3 3 -16 0 Q-3 -3 0 -22Z', fill: '#fffdf0' }, g);
+    return tween(460, E.linear, function (p) {
+      g.setAttribute('opacity', Math.sin(Math.PI * p) * 0.8);
+      g.setAttribute('transform', 'translate(' + x + ' ' + y + ') rotate(' + (p * 25) + ') scale(' + (0.5 + Math.sin(Math.PI * p) * 0.5) + ')');
+      if (p >= 1) g.remove();
+    });
+  }
+
+  function flash(color, peak, dur) {
+    var r = el('rect', { x: -400, y: -400, width: 2400, height: 1800, fill: color, opacity: 0 }, fx);
+    return tween(dur, E.linear, function (p) {
+      r.setAttribute('opacity', (p < 0.25 ? p / 0.25 : 1 - (p - 0.25) / 0.75) * peak);
+      if (p >= 1 && r.parentNode) r.parentNode.removeChild(r);
+    });
+  }
+
+  function shakeFor(amount, dur) {
+    return tween(dur, E.linear, function (p) { S.shake = amount * (1 - p); })
+      .then(function () { S.shake = 0; });
+  }
+
+  function sprayBurst(origin) {
+    var rnd = mulberry32(OPT.seed ^ 0x51ed);
+    var jobs = [];
+    for (var i = 0; i < 22; i++) {
+      (function () {
+        var ang = rnd() * Math.PI * 2;
+        var spd = 320 + rnd() * 900;
+        var r0 = 6 + rnd() * 16;
+        var c = el('circle', { cx: origin[0], cy: origin[1], r: r0, fill: 'url(#gSnot)', opacity: 0.9 }, fx);
+        jobs.push(tween(280 + rnd() * 240, E.outCubic, function (p) {
+          c.setAttribute('cx', origin[0] + Math.cos(ang) * spd * p);
+          c.setAttribute('cy', origin[1] + Math.sin(ang) * spd * p * 0.72);
+          c.setAttribute('r', r0 * (1 + p * 3.4));
+          c.setAttribute('opacity', 0.9 * (1 - p));
+          if (p >= 1 && c.parentNode) c.parentNode.removeChild(c);
+        }));
+      }());
+    }
+    return Promise.all(jobs);
+  }
+
+  function smearStreak(x, y, w, h) {
+    var g = el('g', { opacity: 0.5 }, fx);
+    el('path', {
+      d: 'M' + (x - w / 2) + ' ' + y + ' q' + (w / 4) + ' ' + (-h) + ' ' + (w / 2) + ' 0 q' + (w / 4) + ' ' + h + ' ' + (w / 2) + ' 0 l0 ' + (h * 0.5) + ' q' + (-w / 2) + ' ' + (h * 0.4) + ' ' + (-w) + ' 0 z',
+      fill: 'url(#gSnot)'
+    }, g);
+    return tween(900, E.outCubic, function (p) {
+      g.setAttribute('opacity', (0.5 * (1 - p)).toFixed(3));
+      if (p >= 1 && g.parentNode) g.parentNode.removeChild(g);
+    });
+  }
+
+  /* -------------------------------------------------------------- helpers */
+  function blink(times, dur) {
+    var seq = Promise.resolve();
+    for (var i = 0; i < (times || 1); i++) {
+      seq = seq.then(function () {
+        return tween(dur || 130, E.linear, function (p) { S.lid = p; })
+          .then(function () { return tween(dur || 130, E.linear, function (p) { S.lid = 1 - p; }); });
+      });
+    }
+    return seq;
+  }
+
+  function moveTo(nx, ny, ns, dur, ease, exp) {
+    var x0 = S.x, y0 = S.y, s0 = S.s;
+    return tween(dur, ease || E.inOut, function (p) {
+      S.x = lerp(x0, nx, p);
+      S.y = lerp(y0, ny, p);
+      S.s = exp ? s0 * Math.pow(ns / s0, p) : lerp(s0, ns, p);
+    });
+  }
+
+  function setMouth(target, dur, ease) {
+    var from = mcopy(S.mouth);
+    return tween(dur, ease || E.outCubic, function (p) { mlerp(S.mouth, from, target, p); });
+  }
+
+  function toValue(get, set, to, dur, ease) {
+    var from = get();
+    return tween(dur, ease || E.inOut, function (p) { set(lerp(from, to, p)); });
+  }
+
+  /* --------------------------------------------------------------- phases */
+  var hudPhase = 'idle';
+  var splatBlobs = null;
+
+  function resetAll() {
+    clearSnot(); tongueOff();
+    while (fx.firstChild) fx.removeChild(fx.firstChild);
+    splatBlobs = null;
+    S.x = -170; S.y = 760; S.s = 0.16; S.rot = -5; S.face = 1;
+    S.bob = 0; S.squash = 0; S.alpha = 1;
+    S.crawlAmp = 0; S.crawlSpeed = 0;
+    S.lid = 0; S.wink = 0; S.brow = 0; S.blush = 0.34; S.noseFlare = 1;
+    S.lookX = 0; S.lookY = 0; S.headTilt = 0; S.jitter = 0; S.shake = 0;
+    S.mouth = mcopy(MOUTH.smile);
+  }
+
+  function ensureSplat() {
+    if (!splatBlobs) { splatBlobs = buildSplat(); popSplat(splatBlobs, true); }
+  }
+
+  var PHASES = [
+    {
+      key: 'enter',
+      pre: function () { resetAll(); },
+      run: function () {
+        S.crawlAmp = 1; S.crawlSpeed = 7.4;
+        return moveTo(360, 726, 0.30, 2100, E.inOut)
+          .then(function () { S.lookX = 0.5; return wait(120); });
+      }
+    },
+    {
+      key: 'wander',
+      pre: function () { resetAll(); S.x = 360; S.y = 726; S.s = 0.30; S.crawlAmp = 1; S.crawlSpeed = 7.4; },
+      run: function () {
+        S.crawlAmp = 1; S.crawlSpeed = 7.8;
+        return moveTo(1190, 648, 0.44, 1900, E.inOut)
+          .then(function () {
+            S.crawlAmp = 0.18; S.lookX = -0.9; S.lookY = 0.2;
+            return blink(1, 110);
+          })
+          .then(function () { return wait(280); })
+          .then(function () {
+            S.crawlAmp = 1; S.lookX = 0; S.lookY = 0;
+            return moveTo(700, 560, 0.66, 1500, E.inOut);
+          })
+          .then(function () {
+            // notices the screen
+            S.crawlAmp = 0.14; S.lookY = -0.3;
+            return Promise.all([
+              toValue(function () { return S.headTilt; }, function (v) { S.headTilt = v; }, -7, 320),
+              toValue(function () { return S.brow; }, function (v) { S.brow = v; }, 0.8, 320)
+            ]);
+          })
+          .then(function () { return wait(340); });
+      }
+    },
+    {
+      key: 'approach',
+      pre: function () { resetAll(); S.x = 700; S.y = 560; S.s = 0.66; S.headTilt = -7; },
+      run: function () {
+        S.crawlAmp = 1; S.crawlSpeed = 9.5; S.brow = 0.3;
+        var t = toValue(function () { return S.headTilt; }, function (v) { S.headTilt = v; }, 0, 900);
+        var damp = tween(2500, E.linear, function (p) { S.crawlAmp = lerp(1, 0.22, p); S.crawlSpeed = lerp(9.5, 4, p); });
+        var grow = moveTo(800, 470, 5.6, 2500, E.inOut, true);
+        var grin = wait(1500).then(function () { return setMouth(MOUTH.openS, 700); });
+        return Promise.all([t, damp, grow, grin]);
+      }
+    },
+    {
+      key: 'inhale',
+      pre: function () { resetAll(); S.x = 800; S.y = 470; S.s = 5.6; S.mouth = mcopy(MOUTH.openS); },
+      run: function () {
+        S.crawlAmp = 0; S.crawlSpeed = 0;
+        return setMouth(MOUTH.tiny, 200)
+          .then(function () {
+            // hitch one
+            return Promise.all([
+              moveTo(800, 452, 5.1, 460, E.outCubic),
+              setMouth(MOUTH.inhale, 460),
+              toValue(function () { return S.lid; }, function (v) { S.lid = v; }, 0.5, 460),
+              toValue(function () { return S.brow; }, function (v) { S.brow = v; }, -0.7, 460),
+              toValue(function () { return S.noseFlare; }, function (v) { S.noseFlare = v; }, 1.28, 460),
+              toValue(function () { return S.blush; }, function (v) { S.blush = v; }, 0.5, 460)
+            ]);
+          })
+          .then(function () {
+            return Promise.all([
+              moveTo(800, 466, 5.35, 200, E.inQuad),
+              setMouth(MOUTH.openS, 200)
+            ]);
+          })
+          .then(function () {
+            // hitch two, bigger
+            S.jitter = 5;
+            return Promise.all([
+              moveTo(800, 430, 4.85, 520, E.outCubic),
+              setMouth(MOUTH.sneeze, 520),
+              toValue(function () { return S.lid; }, function (v) { S.lid = v; }, 0.86, 520),
+              toValue(function () { return S.brow; }, function (v) { S.brow = v; }, -1, 520),
+              toValue(function () { return S.noseFlare; }, function (v) { S.noseFlare = v; }, 1.55, 520),
+              toValue(function () { return S.blush; }, function (v) { S.blush = v; }, 0.78, 520),
+              toValue(function () { return S.headTilt; }, function (v) { S.headTilt = v; }, -9, 520)
+            ]);
+          })
+          .then(function () { S.jitter = 9; return wait(240); });
+      }
+    },
+    {
+      key: 'sneeze',
+      pre: function () {
+        resetAll();
+        S.x = 800; S.y = 430; S.s = 4.85; S.lid = 0.86; S.brow = -1;
+        S.noseFlare = 1.55; S.blush = 0.78; S.headTilt = -9; S.mouth = mcopy(MOUTH.sneeze);
+      },
+      run: function () {
+        var lunge = Promise.all([
+          moveTo(800, 404, 7.4, 150, E.inCubic),
+          toValue(function () { return S.headTilt; }, function (v) { S.headTilt = v; }, 5, 150),
+          toValue(function () { return S.lid; }, function (v) { S.lid = v; }, 1, 110),
+          toValue(function () { return S.noseFlare; }, function (v) { S.noseFlare = v; }, 1.85, 150)
+        ]);
+
+        splatBlobs = buildSplat();
+
+        return lunge.then(function () {
+          S.jitter = 0;
+          var origin = toStage(0, 60);
+          return Promise.all([
+            flash('#eaf6b0', 0.22, 220),
+            tween(580, E.linear, function (p) { S.squash = Math.sin(p * Math.PI * 3) * Math.pow(1 - p, 2) * 1.4; }),
+            shakeFor(24, 460),
+            sprayBurst(origin),
+            popSplat(splatBlobs, false),
+            wait(120).then(function () {
+              return Promise.all([
+                moveTo(800, 470, 5.3, 460, E.outBack),
+                setMouth(MOUTH.openS, 420),
+                toValue(function () { return S.lid; }, function (v) { S.lid = v; }, 0.25, 420),
+                toValue(function () { return S.noseFlare; }, function (v) { S.noseFlare = v; }, 1.1, 420),
+                toValue(function () { return S.headTilt; }, function (v) { S.headTilt = v; }, 0, 420)
+              ]);
+            })
+          ]);
+        });
+      }
+    },
+    {
+      key: 'sitback',
+      pre: function () {
+        resetAll(); ensureSplat();
+        S.x = 800; S.y = 470; S.s = 5.3; S.lid = 0.25; S.mouth = mcopy(MOUTH.openS); S.blush = 0.78;
+      },
+      run: function () {
+        return Promise.all([
+          moveTo(800, 496, 3.0, 900, E.outQuint),
+          setMouth(MOUTH.smile, 700),
+          toValue(function () { return S.lid; }, function (v) { S.lid = v; }, 0, 500),
+          toValue(function () { return S.brow; }, function (v) { S.brow = v; }, 0.35, 700),
+          toValue(function () { return S.blush; }, function (v) { S.blush = v; }, 0.46, 900)
+        ])
+          .then(function () { return blink(2, 110); })
+          .then(function () {
+            S.lookX = -0.5; S.lookY = -0.4;
+            return toValue(function () { return S.headTilt; }, function (v) { S.headTilt = v; }, 6, 380);
+          })
+          .then(function () { return wait(520); });
+      }
+    },
+    {
+      key: 'lick',
+      pre: function () {
+        resetAll(); ensureSplat();
+        S.x = 800; S.y = 496; S.s = 3.0; S.blush = 0.46; S.headTilt = 6;
+      },
+      run: function () {
+        var WAY = [
+          [800, 520], [1160, 430], [1450, 560], [1420, 850],
+          [1030, 780], [700, 700], [330, 820], [150, 680],
+          [640, 570], [780, 220], [1080, 150], [1430, 200],
+          [1300, 430], [900, 560]
+        ];
+        return Promise.all([
+          moveTo(800, 420, 3.4, 760, E.inOut),
+          setMouth(MOUTH.lick, 620),
+          toValue(function () { return S.headTilt; }, function (v) { S.headTilt = v; }, 0, 620),
+          toValue(function () { return S.lid; }, function (v) { S.lid = v; }, 0.3, 620)
+        ]).then(function () {
+          tongueOn();
+          var tip = [800, 700];
+          return tween(240, E.outBack, function (p) { drawTongue(tip, p); })
+            .then(function () {
+              var seq = Promise.resolve();
+              var prev = tip;
+              WAY.forEach(function (w, i) {
+                seq = seq.then(function () {
+                  var from = prev.slice();
+                  var bodyX = S.x;
+                  prev = w;
+                  S.lookX = clamp((w[0] - 800) / 700, -1, 1);
+                  S.lookY = clamp((w[1] - 500) / 500, -1, 1);
+                  return tween(300 + (i % 3) * 60, E.inOut, function (p) {
+                    var arc = Math.sin(Math.PI * p) * (i % 2 ? -48 : 48);
+                    var cur = [lerp(from[0], w[0], p), lerp(from[1], w[1], p) + arc];
+                    var real = drawTongue(cur, 1);
+                    if (real) wipeNear(real[0], real[1], 132);
+                    S.x = lerp(bodyX, 800 + (w[0] - 800) * 0.1, p);
+                    S.headTilt = (cur[0] - 800) / 140;
+                    if (p === 1 && i % 3 === 1) cleanGlint(cur[0], cur[1]);
+                  });
+                });
+              });
+              return seq;
+            })
+            .then(function () {
+              // whatever the sweep grazed past goes with the last lick
+              snot.forEach(function (b) { if (b.alive && !b.stubborn) killBlob(b, 240); });
+              return tween(260, E.inCubic, function (p) { drawTongue([800, 700], 1 - p); });
+            })
+            .then(function () {
+              tongueOff();
+              S.lookX = 0; S.lookY = 0;
+              return Promise.all([
+                setMouth(MOUTH.smile, 300), blink(1, 120),
+                toValue(function () { return S.headTilt; }, function (v) { S.headTilt = v; }, 0, 300)
+              ]);
+            });
+        });
+      }
+    },
+    {
+      key: 'notice',
+      pre: function () {
+        resetAll(); ensureSplat();
+        snot.forEach(function (b) { if (!b.stubborn) { b.alive = false; if (b.el.parentNode) b.el.parentNode.removeChild(b.el); } });
+        S.x = 800; S.y = 420; S.s = 3.4; S.lid = 0.3;
+      },
+      run: function () {
+        return Promise.all([
+          moveTo(880, 430, 3.3, 620, E.outCubic),
+          toValue(function () { return S.lid; }, function (v) { S.lid = v; }, 0, 400)
+        ])
+          .then(function () {
+            S.lookX = -1; S.lookY = -0.55;
+            return Promise.all([
+              toValue(function () { return S.headTilt; }, function (v) { S.headTilt = v; }, -11, 420),
+              toValue(function () { return S.brow; }, function (v) { S.brow = v; }, 1, 420),
+              setMouth(MOUTH.tiny, 420)
+            ]);
+          })
+          .then(function () { return wait(420); })
+          .then(function () {
+            return Promise.all([
+              toValue(function () { return S.brow; }, function (v) { S.brow = v; }, -0.8, 260),
+              toValue(function () { return S.lid; }, function (v) { S.lid = v; }, 0.3, 260)
+            ]);
+          })
+          .then(function () { return wait(200); });
+      }
+    },
+    {
+      key: 'turn',
+      pre: function () {
+        resetAll(); ensureSplat();
+        snot.forEach(function (b) { if (!b.stubborn) { b.alive = false; if (b.el.parentNode) b.el.parentNode.removeChild(b.el); } });
+        S.x = 880; S.y = 430; S.s = 3.3; S.brow = -0.8; S.lid = 0.3; S.headTilt = -11;
+      },
+      run: function () {
+        S.crawlAmp = 0.5; S.crawlSpeed = 8;
+        return Promise.all([
+          moveTo(700, 470, 2.5, 700, E.inOut),
+          toValue(function () { return S.face; }, function (v) { S.face = v; }, -1, 700, E.inOut),
+          toValue(function () { return S.rot; }, function (v) { S.rot = v; }, 6, 350).then(function () {
+            return toValue(function () { return S.rot; }, function (v) { S.rot = v; }, 0, 350);
+          })
+        ]);
+      }
+    },
+    {
+      key: 'wipe',
+      pre: function () {
+        resetAll(); ensureSplat();
+        snot.forEach(function (b) { if (!b.stubborn) { b.alive = false; if (b.el.parentNode) b.el.parentNode.removeChild(b.el); } });
+        S.x = 700; S.y = 470; S.s = 2.5; S.face = -1; S.crawlAmp = 0;
+      },
+      run: function () {
+        S.crawlAmp = 0.7; S.crawlSpeed = 7;
+        return moveTo(CORNER.x + 186, CORNER.y + 14, 1.9, 820, E.inOut)
+          .then(function () {
+            S.crawlAmp = 0;
+            var left = snot.filter(function (b) { return b.alive; });
+            var seq = Promise.resolve();
+            var order = left.slice().sort(function (a, b) { return b.r - a.r; });
+            for (var i = 0; i < 5; i++) {
+              (function (i) {
+                seq = seq.then(function () {
+                  var dir = i % 2 === 0 ? -1 : 1;
+                  var x0 = S.x, r0 = S.rot, home = CORNER.x + 186;
+                  var xa = home + dir * 104;
+                  return Promise.all([
+                    tween(160, E.outCubic, function (p) { S.x = lerp(x0, xa, p); S.rot = lerp(r0, dir * 6, p); }),
+                    tween(160, E.linear, function (p) { S.squash = p; })
+                  ]).then(function () {
+                    var victim = order[i];
+                    if (victim && victim.alive) {
+                      killBlob(victim, 340, dir * 90);
+                      smearStreak(victim.x + dir * 40, victim.y, victim.r * 2.6, victim.r * 0.9);
+                    }
+                    return tween(160, E.inOut, function (p) {
+                      S.x = lerp(xa, home, p); S.rot = lerp(dir * 6, 0, p); S.squash = 1 - p;
+                    });
+                  });
+                });
+              }(i));
+            }
+            return seq.then(function () {
+              S.squash = 0;
+              var rest = snot.filter(function (b) { return b.alive; });
+              return Promise.all(rest.map(function (b) { return killBlob(b, 300, 60); }));
+            });
+          })
+          .then(function () { return wait(260); });
+      }
+    },
+    {
+      key: 'outro',
+      pre: function () {
+        resetAll();
+        S.x = CORNER.x + 186; S.y = CORNER.y + 14; S.s = 1.9; S.face = -1;
+      },
+      run: function () {
+        S.crawlAmp = 0.35; S.crawlSpeed = 7;
+        return Promise.all([
+          moveTo(700, 520, 2.1, 620, E.inOut),
+          toValue(function () { return S.face; }, function (v) { S.face = v; }, 1, 620, E.inOut)
+        ])
+          .then(function () {
+            S.crawlAmp = 0; S.lookY = -0.2;
+            return Promise.all([
+              setMouth(MOUTH.smile, 320),
+              toValue(function () { return S.brow; }, function (v) { S.brow = v; }, 0.7, 320),
+              toValue(function () { return S.blush; }, function (v) { S.blush = v; }, 0.55, 320)
+            ]);
+          })
+          .then(function () {
+            return tween(520, E.linear, function (p) {
+              S.wink = Math.pow(Math.sin(Math.PI * p), 0.5);
+              S.headTilt = -7 * Math.sin(Math.PI * p);
+            });
+          })
+          .then(function () {
+            S.crawlAmp = 1; S.crawlSpeed = 8.4; S.lookX = 0.7;
+            return Promise.all([
+              moveTo(-420, 720, 0.18, 2100, E.inOut, true),
+              wait(1500).then(function () { return tween(600, E.linear, function (p) { S.alpha = 1 - p; }); })
+            ]);
+          });
+      }
+    }
+  ];
+
+  /* ------------------------------------------------------------ sequencer */
+  var playing = false;
+
+  function runFrom(index) {
+    var mine = ++token;
+    playing = true;
+    paused = false;
+    startClock();
+    PHASES[index].pre();   // rebuild the world at that phase's entry state
+    emit('start', { phase: PHASES[index].key });
+
+    var seq = Promise.resolve();
+    PHASES.slice(index).forEach(function (ph) {
+      seq = seq.then(function () {
+        if (mine !== token) return;
+        hudPhase = ph.key;
+        emit('phase', { phase: ph.key });
+        return ph.run();
+      });
+    });
+    return seq.then(function () {
+      if (mine !== token) return;
+      playing = false;
+      hudPhase = 'done';
+      emit('finish', { });
+      if (OPT.loop) setTimeout(function () { runFrom(0); }, 900);
+    });
+  }
+
+  /* ---------------------------------------------------------------- debug */
+  if (OPT.debug) {
+    window.addEventListener('keydown', function (e) {
+      if (e.key === 'r') { runFrom(0); }
+      else if (e.key === ' ') { paused = !paused; e.preventDefault(); }
+      else if (e.key >= '1' && e.key <= '9') {
+        var i = parseInt(e.key, 10) - 1;
+        if (i < PHASES.length) runFrom(i);
+      } else if (e.key === '0') { runFrom(9); }
+      else if (e.key === '-') { runFrom(10); }
+    });
+  }
+
+  /* ------------------------------------------------------------------ api */
+  var listeners = {};
+  function emit(ev, data) {
+    var l = listeners[ev] || [];
+    for (var i = 0; i < l.length; i++) { try { l[i](data); } catch (err) { console.error(err); } }
+    try {
+      if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.babyOverlay) {
+        window.webkit.messageHandlers.babyOverlay.postMessage({ event: ev, data: data || null });
+      }
+    } catch (err) {}
+    try {
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage({ source: 'babyOverlay', event: ev, data: data || null }, '*');
+      }
+    } catch (err) {}
+  }
+
+  var API = {
+    phases: PHASES.map(function (p) { return p.key; }),
+    play: function (opts) {
+      opts = opts || {};
+      if (opts.speed) OPT.speed = clamp(opts.speed, 0.2, 5);
+      if (opts.seed) OPT.seed = opts.seed | 0;
+      if (typeof opts.loop === 'boolean') OPT.loop = opts.loop;
+      var i = 0;
+      if (opts.from) { var j = API.phases.indexOf(opts.from); if (j >= 0) i = j; }
+      return runFrom(i);
+    },
+    stop: function () {
+      token++;
+      playing = false;
+      hudPhase = 'stopped';
+      resetAll();
+      render();
+    },
+    pause: function () { paused = true; },
+    resume: function () { paused = false; },
+    setSpeed: function (v) { OPT.speed = clamp(v, 0.2, 5); },
+    on: function (ev, fn) { (listeners[ev] || (listeners[ev] = [])).push(fn); return API; },
+    get playing() { return playing; }
+  };
+  window.BabyOverlay = API;
+
+  resetAll();
+  startClock();
+  render();
+  if (OPT.autoplay) runFrom(0);
+}());
+</script>
+</body>
+</html>

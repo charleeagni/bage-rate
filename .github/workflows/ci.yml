@@ -1,0 +1,139 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  # Both supported package managers run the canonical verification, so both
+  # Targets — including the Web Target's bundle separation and its Server
+  # Process tests — are proven on each installation path: `verify` below on npm,
+  # and `bun` at the end of this file on Bun.
+  verify:
+    name: npm frozen install and verification
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install Linux Tauri prerequisites
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          libwebkit2gtk-4.1-dev
+          build-essential
+          curl
+          wget
+          file
+          libxdo-dev
+          libssl-dev
+          libayatana-appindicator3-dev
+          librsvg2-dev
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.95.0 --profile minimal --component clippy,rustfmt
+      - name: Install pinned entity generator
+        run: cargo +1.95.0 install --locked sea-orm-cli@2.0.1
+      - run: npm ci
+      - run: npm audit --audit-level=high
+      - run: npm run verify
+      - name: Build the complete Tauri application without bundling
+        run: npm run build:app:check
+      # Each Target's ship command, run once. `build:web` is the only thing that
+      # executes scripts/build-web.sh; `verify` proves both halves it invokes but
+      # not that it invokes them correctly. Running it here costs only the
+      # release profile, because the Web Target bundle and the Server Process
+      # have already been built above.
+      - name: Ship the Web Target
+        run: npm run build:web
+
+  rust-security:
+    name: Rust dependency audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      checks: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      # The audit reads the lockfile at the repository root, which is now the
+      # Cargo workspace root and therefore resolves every member: the domain
+      # crate, the TauRPC transport, the Server Process, and the Tauri
+      # application. A lockfile anywhere else would mean a crate resolving its
+      # dependencies outside that root and so escaping this audit.
+      - name: Confirm one root lockfile covers the whole workspace
+        run: |
+          test -f Cargo.lock
+          nested="$(find . -name Cargo.lock -not -path ./Cargo.lock -not -path './target/*')"
+          if [ -n "${nested}" ]; then
+            echo "ERROR: lockfiles outside the audited workspace root: ${nested}" >&2
+            exit 1
+          fi
+      - uses: rustsec/audit-check@v2.0.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  platform-rust:
+    name: Rust (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.95.0 --profile minimal
+      - name: Compile and test the complete Rust workspace
+        run: cargo +1.95.0 test --locked --workspace
+
+  frontend:
+    name: npm frontend
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run test:ts
+      - name: Build both Targets' UI assets and prove the bundles are separate
+        run: npm run check:bundles
+
+  bun:
+    name: Bun frozen install and verification
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.10
+      - name: Install Linux Tauri prerequisites
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          libwebkit2gtk-4.1-dev
+          build-essential
+          curl
+          wget
+          file
+          libxdo-dev
+          libssl-dev
+          libayatana-appindicator3-dev
+          librsvg2-dev
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.95.0 --profile minimal --component clippy,rustfmt
+      - name: Install pinned entity generator
+        run: cargo +1.95.0 install --locked sea-orm-cli@2.0.1
+      - run: bun install --frozen-lockfile
+      - run: bun audit --audit-level=high
+      - run: bun run verify

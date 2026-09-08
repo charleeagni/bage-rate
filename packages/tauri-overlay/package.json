@@ -1,0 +1,11 @@
+{
+  "name": "tauri-overlay",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": "./src/index.ts",
+  "peerDependencies": {
+    "@tauri-apps/api": "2.11.1",
+    "react": "19.2.8"
+  }
+}

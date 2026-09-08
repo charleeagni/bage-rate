@@ -1,0 +1,11 @@
+{
+  "name": "@tauri-graphql-template/apollo",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": "./src/index.ts",
+  "peerDependencies": {
+    "@apollo/client": "4.2.10",
+    "graphql": "16.14.2"
+  }
+}

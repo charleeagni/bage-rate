@@ -1,0 +1,46 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
+      canvas { position: absolute; left: 0; top: 0; }
+    </style>
+  </head>
+  <body>
+    <script type="module">
+      // A three.js pet: a wireframe torus knot drifting across a transparent canvas.
+      // three.js is served from ./vendor/, copied there on install (see package.json).
+      import * as THREE from "./vendor/three.module.min.js";
+
+      const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+      renderer.setClearColor(0x000000, 0);
+      renderer.setPixelRatio(devicePixelRatio);
+      document.body.append(renderer.domElement);
+
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
+      camera.position.z = 8;
+      const knot = new THREE.Mesh(
+        new THREE.TorusKnotGeometry(1.4, 0.4, 160, 24),
+        new THREE.MeshNormalMaterial({ wireframe: true }),
+      );
+      scene.add(knot);
+
+      const resize = () => {
+        renderer.setSize(innerWidth, innerHeight);
+        camera.aspect = innerWidth / innerHeight;
+        camera.updateProjectionMatrix();
+      };
+      addEventListener("resize", resize);
+      resize();
+
+      renderer.setAnimationLoop((ms) => {
+        knot.rotation.x = ms / 2000;
+        knot.rotation.y = ms / 1400;
+        knot.position.x = Math.sin(ms / 3000) * 3;
+        renderer.render(scene, camera);
+      });
+    </script>
+  </body>
+</html>

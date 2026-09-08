@@ -1,0 +1,22 @@
+[package]
+name = "app-schema"
+version = "0.1.0"
+description = "Migrations, generated Models, Store access, and the composed App Schema"
+edition = "2021"
+publish = false
+
+[lib]
+name = "app_schema"
+
+[dependencies]
+module-registry = { path = "../module-registry" }
+module-host = { path = "../module-host" }
+sea-orm.workspace = true
+sea-orm-migration.workspace = true
+seaography.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+projects-module = { path = "../../modules/projects/rust" }
+serde_json.workspace = true
+tempfile.workspace = true

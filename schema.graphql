@@ -1,0 +1,363 @@
+input BooleanFilterInput {
+	eq: Boolean
+	ne: Boolean
+	gt: Boolean
+	gte: Boolean
+	lt: Boolean
+	lte: Boolean
+	is_in: [Boolean!]
+	is_not_in: [Boolean!]
+	is_null: Boolean
+}
+
+input CursorInput {
+	cursor: String
+	limit: Int!
+}
+
+type Documents {
+	id: String!
+	taskId: String!
+	scope: String!
+	rootDir: String!
+	relPath: String!
+	createdAt: String!
+	updatedAt: String!
+	contentDigest: String
+	neverSaved: Boolean!
+}
+
+type DocumentsConnection {
+	pageInfo: PageInfo!
+	paginationInfo: PaginationInfo
+	nodes: [Documents!]!
+	edges: [DocumentsEdge!]!
+}
+
+type DocumentsEdge {
+	cursor: String!
+	node: Documents!
+}
+
+input DocumentsFilterInput {
+	id: StringFilterInput
+	taskId: StringFilterInput
+	scope: StringFilterInput
+	rootDir: StringFilterInput
+	relPath: StringFilterInput
+	createdAt: StringFilterInput
+	updatedAt: StringFilterInput
+	contentDigest: StringFilterInput
+	and: [DocumentsFilterInput!]
+	or: [DocumentsFilterInput!]
+	not: DocumentsFilterInput
+}
+
+input DocumentsHavingInput {
+	_: Boolean
+}
+
+input DocumentsInsertInput {
+	id: String!
+	taskId: String!
+	scope: String!
+	rootDir: String!
+	relPath: String!
+	createdAt: String!
+	updatedAt: String!
+	contentDigest: String
+}
+
+input DocumentsOrderInput {
+	id: OrderByEnum
+	taskId: OrderByEnum
+	scope: OrderByEnum
+	rootDir: OrderByEnum
+	relPath: OrderByEnum
+	createdAt: OrderByEnum
+	updatedAt: OrderByEnum
+	contentDigest: OrderByEnum
+}
+
+type DocumentsSaveCheck {
+	documentId: String!
+	held: String
+	known: Boolean!
+	upToDate: Boolean!
+}
+
+type DocumentsSaveOutcome {
+	documentId: String!
+	digest: String!
+	saved: Boolean!
+	stale: Boolean!
+}
+
+type DocumentsSavedEvent {
+	documentId: String!
+	digest: String!
+	savedAt: String!
+}
+
+input FloatFilterInput {
+	eq: Float
+	ne: Float
+	gt: Float
+	gte: Float
+	lt: Float
+	lte: Float
+	is_in: [Float!]
+	is_not_in: [Float!]
+	is_null: Boolean
+	between: [Float!]
+	not_between: [Float!]
+}
+
+input IdentityFilterInput {
+	eq: String
+	ne: String
+	gt: String
+	gte: String
+	lt: String
+	lte: String
+	is_in: [String!]
+	is_not_in: [String!]
+	is_null: Boolean
+	between: [String!]
+	not_between: [String!]
+}
+
+input IntegerFilterInput {
+	eq: Int
+	ne: Int
+	gt: Int
+	gte: Int
+	lt: Int
+	lte: Int
+	is_in: [Int!]
+	is_not_in: [Int!]
+	is_null: Boolean
+	between: [Int!]
+	not_between: [Int!]
+}
+
+scalar Json
+
+type Mutation {
+	documentsCreateOne(data: DocumentsInsertInput!): Documents!
+	documentsDelete(filter: DocumentsFilterInput): Int!
+	documentsSave(documentId: String!, expectedDigest: String!, digest: String!, savedAt: String!): DocumentsSaveOutcome!
+	projectsCreateOne(data: ProjectsInsertInput!): Projects!
+	projectsCreateBatch(data: [ProjectsInsertInput!]!): [Projects!]!
+	projectsUpdate(data: ProjectsUpdateInput!, filter: ProjectsFilterInput): [Projects!]!
+	projectsDelete(filter: ProjectsFilterInput): Int!
+	workspacesCreateOne(data: WorkspacesInsertInput!): Workspaces!
+	workspacesUpdate(data: WorkspacesUpdateInput!, filter: WorkspacesFilterInput): [Workspaces!]!
+	workspacesDelete(filter: WorkspacesFilterInput): Int!
+}
+
+input OffsetInput {
+	limit: Int!
+	offset: Int!
+}
+
+enum OrderByEnum {
+	ASC
+	DESC
+}
+
+type PageInfo {
+	hasPreviousPage: Boolean!
+	hasNextPage: Boolean!
+	startCursor: String
+	endCursor: String
+}
+
+input PageInput {
+	limit: Int!
+	page: Int!
+}
+
+type PaginationInfo {
+	pages: Int!
+	current: Int!
+	offset: Int!
+	total: Int!
+}
+
+input PaginationInput @oneOf {
+	cursor: CursorInput
+	page: PageInput
+	offset: OffsetInput
+}
+
+type Projects {
+	id: Int!
+	name: String!
+	workspaceRoot: String!
+}
+
+type ProjectsConnection {
+	pageInfo: PageInfo!
+	paginationInfo: PaginationInfo
+	nodes: [Projects!]!
+	edges: [ProjectsEdge!]!
+}
+
+type ProjectsEdge {
+	cursor: String!
+	node: Projects!
+}
+
+input ProjectsFilterInput {
+	id: IntegerFilterInput
+	name: StringFilterInput
+	workspaceRoot: StringFilterInput
+	and: [ProjectsFilterInput!]
+	or: [ProjectsFilterInput!]
+	not: ProjectsFilterInput
+}
+
+input ProjectsHavingInput {
+	_: Boolean
+}
+
+input ProjectsInsertInput {
+	id: Int
+	name: String!
+	workspaceRoot: String!
+}
+
+input ProjectsOrderInput {
+	id: OrderByEnum
+	name: OrderByEnum
+	workspaceRoot: OrderByEnum
+}
+
+input ProjectsUpdateInput {
+	id: Int
+	name: String
+	workspaceRoot: String
+}
+
+type Query {
+	documents(filters: DocumentsFilterInput, having: DocumentsHavingInput, orderBy: DocumentsOrderInput, pagination: PaginationInput): DocumentsConnection!
+	documentsSaveCheck(documentId: String!, digest: String!): DocumentsSaveCheck!
+	projects(filters: ProjectsFilterInput, having: ProjectsHavingInput, orderBy: ProjectsOrderInput, pagination: PaginationInput): ProjectsConnection!
+	workspaces(filters: WorkspacesFilterInput, having: WorkspacesHavingInput, orderBy: WorkspacesOrderInput, pagination: PaginationInput): WorkspacesConnection!
+}
+
+input StringFilterInput {
+	eq: String
+	ne: String
+	gt: String
+	gte: String
+	lt: String
+	lte: String
+	ci_eq: String
+	is_in: [String!]
+	is_not_in: [String!]
+	is_null: Boolean
+	contains: String
+	starts_with: String
+	ends_with: String
+	like: String
+	not_like: String
+	between: [String!]
+	not_between: [String!]
+}
+
+type Subscription {
+	documentsSaved: DocumentsSavedEvent!
+}
+
+input TextFilterInput {
+	eq: String
+	ne: String
+	gt: String
+	gte: String
+	lt: String
+	lte: String
+	is_in: [String!]
+	is_not_in: [String!]
+	is_null: Boolean
+	between: [String!]
+	not_between: [String!]
+}
+
+type Workspaces {
+	id: String!
+	canonicalRoot: String!
+	displayName: String!
+	lastOpenedAt: String!
+	createdAt: String!
+}
+
+type WorkspacesConnection {
+	pageInfo: PageInfo!
+	paginationInfo: PaginationInfo
+	nodes: [Workspaces!]!
+	edges: [WorkspacesEdge!]!
+}
+
+type WorkspacesEdge {
+	cursor: String!
+	node: Workspaces!
+}
+
+input WorkspacesFilterInput {
+	id: StringFilterInput
+	canonicalRoot: StringFilterInput
+	displayName: StringFilterInput
+	lastOpenedAt: TextFilterInput
+	createdAt: TextFilterInput
+	and: [WorkspacesFilterInput!]
+	or: [WorkspacesFilterInput!]
+	not: WorkspacesFilterInput
+}
+
+input WorkspacesHavingInput {
+	_: Boolean
+}
+
+input WorkspacesInsertInput {
+	id: String!
+	canonicalRoot: String!
+	displayName: String!
+	lastOpenedAt: String!
+	createdAt: String!
+}
+
+input WorkspacesOrderInput {
+	id: OrderByEnum
+	canonicalRoot: OrderByEnum
+	displayName: OrderByEnum
+	lastOpenedAt: OrderByEnum
+	createdAt: OrderByEnum
+}
+
+input WorkspacesUpdateInput {
+	id: String
+	canonicalRoot: String
+	displayName: String
+	lastOpenedAt: String
+	createdAt: String
+}
+
+"""
+Directs the executor to include this field or fragment only when the `if` argument is true.
+"""
+directive @include(if: Boolean!) on FIELD | FRAGMENT_SPREAD | INLINE_FRAGMENT
+"""
+Indicates that an Input Object is a OneOf Input Object (and thus requires exactly one of its field be provided)
+"""
+directive @oneOf on INPUT_OBJECT
+"""
+Directs the executor to skip this field or fragment when the `if` argument is true.
+"""
+directive @skip(if: Boolean!) on FIELD | FRAGMENT_SPREAD | INLINE_FRAGMENT
+schema {
+	query: Query
+	mutation: Mutation
+	subscription: Subscription
+}

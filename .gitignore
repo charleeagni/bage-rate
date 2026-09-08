@@ -1,0 +1,30 @@
+/node_modules/
+/dist/
+/dist-web/
+/schema.generated.graphql
+/target
+# The Server Process writes its default Store into the working directory.
+/server-store.db
+/server-store.db-shm
+/server-store.db-wal
+/src-tauri/gen/
+*.log
+.DS_Store
+# Local credentials and signing material never belong in a source release.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+# Keep private release inputs and locally built distributables out of Git.
+/private-releases/
+/release-private/
+/artifacts/private/
+# Copied from node_modules by the postinstall script; pets import it by relative path.
+/public/pets/vendor/
+
+# Local assistant settings and captured desktop recordings.
+/.claude/
+/public/screen-recording-*

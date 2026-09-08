@@ -1,0 +1,33 @@
+[package]
+name = "web-server"
+version = "0.1.0"
+description = "The Server Process: hosts the App Schema and the Web Target assets on one origin"
+edition = "2021"
+publish = false
+
+[lib]
+name = "web_server"
+
+[[bin]]
+name = "web-server"
+path = "src/main.rs"
+
+[dependencies]
+app-schema = { path = "../app-schema" }
+# This crate executes a dynamic schema directly, so it must ask for the
+# feature itself rather than rely on another workspace member enabling it.
+async-graphql = { workspace = true, features = ["dynamic-schema"] }
+async-graphql-axum.workspace = true
+axum.workspace = true
+clap.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tower-http = { workspace = true, features = ["fs", "set-header"] }
+
+[dev-dependencies]
+futures-util.workspace = true
+projects-module = { path = "../../modules/projects/rust" }
+reqwest = { workspace = true, features = ["json"] }
+sea-orm.workspace = true
+tempfile.workspace = true
+tokio-tungstenite.workspace = true

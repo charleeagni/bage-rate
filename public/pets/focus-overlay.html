@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Focus orbit</title>
+<style>
+  html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;pointer-events:none}
+  body{font-family:ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#fff}
+  canvas{position:fixed;inset:0;width:100%;height:100%}
+  #caption{position:fixed;top:calc(50% + min(24vw, 190px));left:24px;right:24px;text-align:center;opacity:0;will-change:transform,opacity}
+  .eyebrow{font-size:10px;font-weight:600;letter-spacing:.32em;color:#b9ece8;text-transform:uppercase;margin-bottom:12px}
+  h1{font-size:clamp(26px,4vw,44px);font-weight:500;letter-spacing:-.055em;margin:0;text-shadow:0 2px 24px #06091e}
+  p{font-size:13px;color:#c4cadc;margin:12px 0 0;letter-spacing:.02em;text-shadow:0 1px 8px #06091e}
+</style>
+</head>
+<body>
+<canvas aria-hidden="true"></canvas>
+<div id="caption" role="status"><div class="eyebrow">A little gravity</div><h1>Come back to your orbit.</h1><p>Your work is waiting. Click anywhere to return.</p></div>
+<script>
+(() => {
+  // A standalone canvas overlay. No remote assets or persistent state.
+  const params = new URLSearchParams(location.search);
+  const speed = Math.min(5, Math.max(.2, Number(params.get('speed')) || 1));
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (params.get('bg') === '1') document.body.style.background = '#090c18';
+  const canvas = document.querySelector('canvas');
+  const ctx = canvas.getContext('2d');
+  const caption = document.querySelector('#caption');
+  let width = 0, height = 0, ratio = 1;
+  let seed = Number(params.get('seed')) || 20260906;
+  const random = () => { seed = (Math.imul(seed, 1664525) + 1013904223) | 0; return (seed >>> 0) / 4294967296; };
+  const stars = Array.from({length: 90}, () => ({angle: random()*Math.PI*2, distance: .8+random()*2.1, size: .5+random()*1.4, phase: random()*6.28}));
+  const resize = () => {
+    width = innerWidth; height = innerHeight; ratio = Math.min(devicePixelRatio || 1, 2);
+    canvas.width = Math.round(width*ratio); canvas.height = Math.round(height*ratio);
+    ctx.setTransform(ratio,0,0,ratio,0,0);
+  };
+  const finish = () => {
+    window.parent.postMessage({source:'babyOverlay', event:'finish'}, '*');
+    window.webkit?.messageHandlers?.babyOverlay?.postMessage({event:'finish',data:null});
+  };
+  if (!ctx) { finish(); return; }
+  addEventListener('resize', resize); resize();
+  const clamp = n => Math.max(0,Math.min(1,n));
+  const smooth = n => { n=clamp(n); return n*n*(3-2*n); };
+  const duration = reduced ? 4 : 12;
+  const start = performance.now();
+  function draw(now) {
+    const t = (now-start)/1000*speed;
+    const entrance = smooth(t/1.8);
+    const exit = smooth((t-(duration-1.4))/1.4);
+    const alpha = entrance*(1-exit);
+    ctx.clearRect(0,0,width,height);
+    if (t >= duration) { caption.style.opacity='0'; removeEventListener('resize',resize); finish(); return; }
+    const r = Math.min(width*.24,height*.23,170);
+    const cx = width/2, cy = height*.46;
+    const motion = reduced ? 0 : t;
+    const collapse = 1-exit*.95;
+    ctx.save(); ctx.translate(cx,cy); ctx.scale(collapse,collapse); ctx.globalAlpha=alpha;
+    // The soft pool behind the object leaves the rest of the desktop visible.
+    const halo = ctx.createRadialGradient(0,0,r*.15,0,0,r*2.7);
+    halo.addColorStop(0,'rgba(12,20,47,.88)'); halo.addColorStop(.48,'rgba(13,18,43,.62)'); halo.addColorStop(1,'rgba(8,12,30,0)');
+    ctx.fillStyle=halo; ctx.fillRect(-r*3,-r*3,r*6,r*6);
+    for (const star of stars) {
+      const a=star.angle+motion*.035;
+      const d=star.distance*r*(1+(1-entrance)*1.7);
+      ctx.globalAlpha=alpha*(.2+.5*(.5+.5*Math.sin(motion*1.2+star.phase)));
+      ctx.fillStyle='#c1f8ed'; ctx.beginPath(); ctx.arc(Math.cos(a)*d,Math.sin(a)*d*.74,star.size,0,Math.PI*2); ctx.fill();
+    }
+    ctx.globalAlpha=alpha;
+    // Layered, tilted ribbons have depth without a WebGL dependency.
+    const ribbons=[];
+    for(let band=0;band<5;band++) {
+      const tilt=band*.59+motion*.12;
+      for(let j=0;j<180;j++) {
+        const a=j/180*Math.PI*2;
+        const wave=1+.055*Math.sin(a*3+motion*1.4+band);
+        const x=Math.cos(a)*r*wave;
+        const y=Math.sin(a)*r*.34*wave;
+        const z=Math.sin(a+motion*.3+band)*.5+.5;
+        ribbons.push({x:x*Math.cos(tilt)-y*Math.sin(tilt),y:x*Math.sin(tilt)+y*Math.cos(tilt),z,band,j});
+      }
+    }
+    ribbons.sort((a,b)=>a.z-b.z);
+    ctx.globalCompositeOperation='screen';
+    for(const p of ribbons) {
+      const shimmer=.5+.5*Math.sin(p.j/180*6.28-motion*1.7+p.band);
+      ctx.fillStyle=`hsla(${165+p.band*19+shimmer*15},90%,${60+p.z*25}%,${(.2+p.z*.65)*alpha})`;
+      ctx.beginPath(); ctx.arc(p.x,p.y,1+p.z*1.5+shimmer*.8,0,Math.PI*2);ctx.fill();
+    }
+    ctx.globalCompositeOperation='source-over';
+    const bob=Math.sin(motion*1.8)*r*.035;
+    const orb=ctx.createRadialGradient(-r*.16,-r*.2+bob,0,0,bob,r*.55);
+    orb.addColorStop(0,'#bcfff0');orb.addColorStop(.35,'#72dfd6');orb.addColorStop(.7,'#568dc4');orb.addColorStop(1,'#222943');
+    ctx.shadowColor='#7cf5df';ctx.shadowBlur=24;ctx.fillStyle=orb;
+    ctx.beginPath();ctx.arc(0,bob,r*.48,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;
+    // A blink and a sideways glance give the small core a personality.
+    const blink = !reduced && ((t>3.2&&t<3.36)||(t>7.1&&t<7.26));
+    const glance = reduced ? 0 : Math.sin(t*.7)*r*.025;
+    ctx.fillStyle='#142b40';
+    for(const side of [-1,1]) {
+      ctx.beginPath();ctx.ellipse(side*r*.135+glance,bob-r*.015,r*.036,blink?r*.008:r*.065,0,0,Math.PI*2);ctx.fill();
+      if(!blink){ctx.fillStyle='#e4fff7';ctx.beginPath();ctx.arc(side*r*.135+glance+r*.01,bob-r*.04,r*.011,0,Math.PI*2);ctx.fill();ctx.fillStyle='#142b40';}
+    }
+    ctx.strokeStyle='rgba(20,43,64,.65)';ctx.lineWidth=1.8;ctx.beginPath();ctx.arc(glance,bob+r*.065,r*.052,.15,Math.PI-.15);ctx.stroke();
+    ctx.restore();
+    caption.style.opacity=String(smooth((t-.8)/1.2)*(1-exit));
+    caption.style.transform=`translateY(${reduced?0:(1-smooth((t-.8)/1.2))*12}px)`;
+    requestAnimationFrame(draw);
+  }
+  requestAnimationFrame(draw);
+})();
+</script>
+</body>
+</html>

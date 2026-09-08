@@ -1,0 +1,89 @@
+query ListTaskDocuments($taskId: String!) {
+  documents(filters: { taskId: { eq: $taskId } }, orderBy: { relPath: ASC }) {
+    nodes {
+      id
+      taskId
+      scope
+      rootDir
+      relPath
+      contentDigest
+      neverSaved
+      updatedAt
+    }
+  }
+}
+
+# What a save would do, asked without doing it. The answer is advisory: the
+# save re-reads inside its own transaction, so this narrows the window rather
+# than closing it.
+query CheckDocumentSave($documentId: String!, $digest: String!) {
+  documentsSaveCheck(documentId: $documentId, digest: $digest) {
+    documentId
+    held
+    known
+    upToDate
+  }
+}
+
+mutation RegisterDocument(
+  $id: String!
+  $taskId: String!
+  $scope: String!
+  $rootDir: String!
+  $relPath: String!
+  $now: String!
+) {
+  documentsCreateOne(
+    data: {
+      id: $id
+      taskId: $taskId
+      scope: $scope
+      rootDir: $rootDir
+      relPath: $relPath
+      createdAt: $now
+      updatedAt: $now
+    }
+  ) {
+    id
+    taskId
+    scope
+    rootDir
+    relPath
+    contentDigest
+    neverSaved
+    updatedAt
+  }
+}
+
+# The only write path to a document's digest: `documentsUpdate` is not in the
+# contract, so a caller cannot skip the compare-and-swap.
+mutation SaveDocument(
+  $documentId: String!
+  $expectedDigest: String!
+  $digest: String!
+  $savedAt: String!
+) {
+  documentsSave(
+    documentId: $documentId
+    expectedDigest: $expectedDigest
+    digest: $digest
+    savedAt: $savedAt
+  ) {
+    documentId
+    digest
+    saved
+    stale
+  }
+}
+
+mutation ForgetDocument($id: String!) {
+  documentsDelete(filter: { id: { eq: $id } })
+}
+
+subscription OnDocumentSaved {
+  documentsSaved {
+    documentId
+    digest
+    savedAt
+  }
+}

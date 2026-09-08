@@ -1,0 +1,31 @@
+[package]
+name = "tauri-graphql-app"
+version = "0.1.3"
+description = "Copy-ready Tauri GraphQL application"
+edition = "2021"
+publish = false
+default-run = "tauri-graphql-app"
+
+[lib]
+name = "tauri_graphql_app"
+
+[build-dependencies]
+tauri-build = { version = "=2.6.3", features = [] }
+
+[dependencies]
+app-schema = { path = "../crates/app-schema" }
+tauri = { workspace = true, features = ["macos-private-api", "tray-icon"] }
+serde.workspace = true
+serde_json.workspace = true
+tauri-plugin-global-shortcut = "=2.3.2"
+tauri-graphql-transport = { path = "../crates/tauri-graphql-transport" }
+tauri-overlay = { git = "https://github.com/charleeagni/tauri-overlay", rev = "e320f3aeb868ab5d1533de5a8132d09a6d354f9e" }
+taurpc.workspace = true
+
+[dev-dependencies]
+tauri = { workspace = true, features = ["test"] }
+tempfile.workspace = true
+
+[target.'cfg(target_os = "macos")'.dev-dependencies]
+objc2 = "=0.6.4"
+objc2-app-kit = { version = "=0.3.2", default-features = false, features = ["std", "NSWindow", "NSResponder", "NSWorkspace", "NSRunningApplication", "libc"] }

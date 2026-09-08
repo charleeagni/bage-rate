@@ -1,0 +1,33 @@
+# Vendored from the standalone seaolim library at commit
+# d4d19e7c7f107991bb4796e23ec9c3925fd2f435. Only this manifest is adapted:
+# the sources are upstream's, so a fix flows in either direction as a plain
+# copy. See README.md for the traps it closes and docs/ for the pin audit a
+# seaography version bump owes.
+
+[package]
+name = "seaolim"
+version = "0.1.0"
+description = "DRF-grade per-field extension seams over Seaography-generated GraphQL"
+edition = "2021"
+publish = false
+
+[lib]
+name = "seaolim"
+
+[dependencies]
+# Re-audit docs/seaography-drf-parity.md on any dependency bump. The workspace
+# pins are the same versions the standalone library pins.
+sea-orm.workspace = true
+seaography = { workspace = true, features = ["macros", "with-chrono"] }
+
+[dev-dependencies]
+serde_json.workspace = true
+tokio.workspace = true
+
+# The vendored tests assemble a BuilderContext the way seaography's own
+# examples do — `default()` then assign `hooks` — because the struct is
+# non-exhaustive and cannot be built by struct literal. This workspace's
+# `-D warnings` clippy run would otherwise reject upstream sources that are
+# meant to stay a plain copy.
+[lints.clippy]
+field_reassign_with_default = "allow"

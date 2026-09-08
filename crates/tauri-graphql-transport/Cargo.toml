@@ -1,0 +1,23 @@
+[package]
+name = "tauri-graphql-transport"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+# This crate executes a dynamic schema directly, so it must ask for the
+# feature itself rather than rely on another workspace member enabling it.
+async-graphql = { workspace = true, features = ["dynamic-schema"] }
+futures-util.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+specta.workspace = true
+tauri.workspace = true
+taurpc.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+# The subscription proof against the real App Schema needs the composed
+# schema; app-schema links no Tauri code, so this stays a test-only edge.
+app-schema = { path = "../app-schema" }
+tauri = { workspace = true, features = ["test"] }
