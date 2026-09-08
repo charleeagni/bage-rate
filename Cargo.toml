@@ -36,4 +36,4 @@ tokio = { version = "=1.53.1", features = ["macros", "rt-multi-thread", "sync", 
 # Pinned to the version the async-graphql axum integration already links, so
 # the test client speaks to the server over one WebSocket implementation.
 tokio-tungstenite = { version = "=0.29.0", default-features = false, features = ["connect", "handshake"] }
-tower-http = { version = "=0.6.11", default-features = false }
+tower-http = { version = "=0.7.1", default-features = false }
