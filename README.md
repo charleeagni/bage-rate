@@ -1,5 +1,11 @@
 ![bage-rate app demo](docs/demo.gif)
 
+<p align="center">
+  <a href="https://github.com/charleeagni/bage-rate/releases/download/v0.1.3/bage-rate_0.1.3_aarch64.dmg">
+    <img src="https://img.shields.io/badge/Download_bage--rate_0.1.3-macOS_Apple_silicon-2675f5?style=for-the-badge&logo=apple&logoColor=white" alt="Download bage-rate 0.1.3 for Apple silicon Macs">
+  </a>
+</p>
+
 # bage-rate
 
 Lock into the app you want to work in. Wander off and bage-rate puts a baby
@@ -61,14 +67,9 @@ change its data.
 
 ## Build a macOS release
 
-`npm run build:app` verifies the repository, builds the app with ad-hoc signing,
-checks its signature and creates a DMG. It also checks the app's signature
-inside the mounted DMG. Finder automation permission isn't needed.
-
-These builds aren't notarized by Apple. Gatekeeper may block a downloaded
-copy, so you may need to approve it yourself. See
-[Apple's instructions](https://support.apple.com/en-us/102445).
-The build doesn't change Gatekeeper settings or remove download quarantine.
+`npm run build:app` verifies the repository, signs and notarizes the app,
+creates a signed and notarized DMG, staples both tickets, and checks the app's
+signature inside the mounted DMG. Finder automation permission isn't needed.
 
 ## License
 

@@ -57,7 +57,8 @@ if [[ "$(uname -s)" != Darwin ]]; then
   exit $?
 fi
 
-# Tauri signs the whole bundle with the configured identity before packaging.
+# Tauri signs, notarizes, and staples the app when the Apple notarization
+# environment variables are present.
 tauri_build --bundles app --ci
 app_name="$(node -p "require('./src-tauri/tauri.conf.json').productName")"
 app_version="$(node -p "require('./src-tauri/tauri.conf.json').version")"
@@ -90,7 +91,15 @@ ln -s /Applications "$work_dir/content/Applications"
 # A standard layout avoids requiring permission to automate Finder.
 hdiutil create -ov -volname "$app_name" -srcfolder "$work_dir/content" -format UDZO "$image_path"
 hdiutil verify "$image_path"
+codesign --force --sign "$APPLE_SIGNING_IDENTITY" --timestamp "$image_path"
+xcrun notarytool submit "$image_path" \
+  --apple-id "$APPLE_ID" \
+  --password "$APPLE_PASSWORD" \
+  --team-id "$APPLE_TEAM_ID" \
+  --wait
+xcrun stapler staple "$image_path"
+xcrun stapler validate "$image_path"
 hdiutil attach -readonly -nobrowse -mountpoint "$work_dir/mount" "$image_path" >/dev/null
 mounted=true
 codesign --verify --deep --strict --verbose=2 "$work_dir/mount/${app_name}.app"
-echo "Verified app signature and DMG: $image_path"
+echo "Verified signed and notarized app and DMG: $image_path"
