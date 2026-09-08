@@ -40,7 +40,7 @@
     "postinstall": "mkdir -p public/pets/vendor && cp node_modules/three/build/three.module.min.js node_modules/three/build/three.core.min.js public/pets/vendor/"
   },
   "dependencies": {
-    "@apollo/client": "4.2.10",
+    "@apollo/client": "4.2.12",
     "@tauri-apps/api": "2.11.1",
     "@tauri-apps/plugin-global-shortcut": "2.3.2",
     "@tauri-graphql-template/apollo": "0.1.0",
