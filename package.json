@@ -57,7 +57,7 @@
     "@graphql-codegen/typed-document-node": "7.1.0",
     "@graphql-codegen/typescript-operations": "6.1.5",
     "@tauri-apps/cli": "2.11.4",
-    "@types/node": "26.2.0",
+    "@types/node": "26.4.1",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "5.2.0",
