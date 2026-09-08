@@ -9,10 +9,3 @@
   color: #fff;
   font: 600 13px system-ui;
 }
-
-/* While the distraction animation plays, a click anywhere on it refocuses the anchor app. */
-.lockin-catch {
-  position: absolute;
-  inset: 0;
-  cursor: pointer;
-}

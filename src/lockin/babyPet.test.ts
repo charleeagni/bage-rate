@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 
 import { BABY_PET_DOCUMENT, babyPetSrc, babyTaunt } from "./babyPet.ts";
@@ -21,4 +22,15 @@ test("the taunt names the distracting site, without the www", () => {
 test("no url, or one that will not parse, still taunts", () => {
   assert.equal(babyTaunt(null), "back to work.");
   assert.equal(babyTaunt("not a url"), "back to work.");
+});
+
+test("only painted baby pixels refocus the locked app", async () => {
+  const [baby, overlay] = await Promise.all([
+    readFile(new URL("../../public/pets/baby-overlay.html", import.meta.url), "utf8"),
+    readFile(new URL("../pets/PetsOverlay.tsx", import.meta.url), "utf8"),
+  ]);
+  assert.match(baby, /#babyRoot\{pointer-events:visiblePainted;cursor:pointer;\}/);
+  assert.match(baby, /<g id="babyRoot" class="clickable">/);
+  assert.match(baby, /babyRoot\.addEventListener\('click'.*emit\('click'/);
+  assert.doesNotMatch(overlay, /lockin-catch/);
 });

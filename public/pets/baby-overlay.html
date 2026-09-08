@@ -39,6 +39,7 @@
   html,body{height:100%;margin:0;background:transparent;overflow:hidden;}
   body{-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;}
   #stage{position:fixed;inset:0;width:100%;height:100%;display:block;pointer-events:none;}
+  #babyRoot{pointer-events:visiblePainted;cursor:pointer;}
   /* The splat lives in its own SVG, promoted to its own compositing layer:
      WebKit runs SVG filters on the CPU and re-runs every blob's goo blur
      whenever the layer it sits in repaints -- which, with the baby moving
@@ -95,7 +96,7 @@
     <g id="scene">
       <ellipse id="shadow" cx="0" cy="0" rx="210" ry="46" fill="#1a1208" opacity="0"/>
 
-      <g id="babyRoot">
+      <g id="babyRoot" class="clickable">
         <!-- ===== BACK VIEW (butt toward the glass) ===== -->
         <g id="babyBack" style="display:none">
           <g id="headB" transform="translate(0 -300) scale(.6)">
@@ -237,6 +238,8 @@
   var headF = $('headF'), shakeG = $('shake'), shadow = $('shadow');
   var snotLayer = $('snotLayer'), tongueLayer = $('tongueLayer'), fx = $('fx');
   var hud = $('hud');
+
+  babyRoot.addEventListener('click', function () { emit('click', {}); });
 
   if (OPT.bg) {
     var bg = $('bgLayer');

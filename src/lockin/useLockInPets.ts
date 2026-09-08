@@ -33,7 +33,7 @@ export function useLockInPets(): { anchor: string | null; pets: Frame[]; refocus
       const m = event.data;
       if (m?.source === "cuteAnimation" && m.event === "error") { fail(m.detail); return; }
       if (m?.source === "cuteAnimation" && m.event === "ready") clearTimeout(startup);
-      if (m?.source === "babyOverlay" && m.event === "finish") refocus();
+      if (m?.source === "babyOverlay" && (m.event === "click" || m.event === "finish")) refocus();
     };
     window.addEventListener("message", onMessage);
     const toggle = async () => {

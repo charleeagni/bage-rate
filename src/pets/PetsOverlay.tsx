@@ -21,10 +21,6 @@ export function PetsOverlay() {
   ];
   return (
     <Overlay frames={frames}>
-      {lockIn.pets.length > 0 && (
-        // ponytail: catches the whole screen, not just the drawn pixels; hit-test frame pixels if that matters.
-        <div className="lockin-catch clickable" title="Back to work" onClick={lockIn.refocus} />
-      )}
       {lockIn.error && <div className="lockin-badge" role="alert">{lockIn.error}</div>}
       {!lockIn.error && lockIn.anchor && <div className="lockin-badge">🔒 Locked in: {lockIn.anchor}</div>}
     </Overlay>
