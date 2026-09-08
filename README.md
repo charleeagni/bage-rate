@@ -1,10 +1,10 @@
+![bage-rate app demo](docs/demo.gif)
+
 # bage-rate
 
 Desktop pets for macOS. A transparent, always-on-top, click-through window
 covers your screen and renders any HTML you give it. Clicks fall through to
 whatever is underneath, except on elements you mark `.clickable`.
-
-![bage-rate demo](docs/demo.gif)
 
 ## Add a pet
 
